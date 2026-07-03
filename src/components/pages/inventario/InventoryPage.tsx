@@ -18,9 +18,26 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [newItem, setNewItem] = useState({ nombre: '', categoria: '', unidadMedida: '', stockMinimo: 0 });
 
-  const load = async () => {
-    inventoryApi.list().then(setData).finally(() => setLoading(false));
-  };
+    const load = async () => {
+        try {
+            setLoading(true);
+
+            const response = await inventoryApi.list();
+
+            console.log(response);
+
+            setData({
+                items: response.items ?? [],
+                lowStockCount: response.lowStockCount ?? 0,
+            });
+
+        } catch (e) {
+            console.error(e);
+            toast.error("Error cargando inventario");
+        } finally {
+            setLoading(false);
+        }
+    };
   useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {

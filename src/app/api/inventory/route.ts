@@ -4,11 +4,25 @@ import { withAuth, withAdmin } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
 
 export const GET = withAuth(async () => {
-  try {
-    const items = await prisma.inventoryItem.findMany({ orderBy: { nombre: 'asc' } });
-    const lowStockCount = items.filter((i) => i.stockActual <= i.stockMinimo).length;
-    return NextResponse.json({ ok: true, data: items, lowStockCount });
-  } catch (e) { return handleError(e); }
+    try {
+        const items = await prisma.inventoryItem.findMany({
+            orderBy: { nombre: 'asc' },
+        });
+
+        const lowStockCount = items.filter(
+            (i) => Number(i.stockActual) <= Number(i.stockMinimo)
+        ).length;
+
+        return NextResponse.json({
+            ok: true,
+            data: {
+                items,
+                lowStockCount,
+            },
+        });
+    } catch (e) {
+        return handleError(e);
+    }
 });
 
 export const POST = withAdmin(async (req) => {
