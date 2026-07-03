@@ -6,8 +6,9 @@ import { handleError } from '@/lib/errors';
 export const GET = withBlockTrabajador(async (_req, { params }) => {
   try {
     const schedules = await (prisma as any).paymentSchedule.findMany({
-      where: { projectId: params.id },
-      orderBy: { orden: 'asc' as const },
+        where: { projectId: params.id }, orderBy: {
+            createdAt: 'asc'
+        },
     });
     return NextResponse.json({ ok: true, data: schedules });
   } catch (e) { return handleError(e); }
@@ -24,7 +25,6 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
         porcentaje: c.porcentaje,
         fechaEstimada: c.fechaEstimada ? new Date(c.fechaEstimada) : null,
         pagado: false,
-        orden: i + 1,
       })),
     });
     return NextResponse.json({ ok: true, data: created });
