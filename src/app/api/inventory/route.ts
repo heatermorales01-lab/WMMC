@@ -13,11 +13,27 @@ export const GET = withAuth(async () => {
 
 export const POST = withAdmin(async (req) => {
   try {
-    const { nombre, descripcion, unidad, stockActual, stockMinimo, precioUnitario } = await req.json();
-    if (!nombre) throw new AppError('nombre es requerido', 400);
-    const item = await prisma.inventoryItem.create({
-      data: { nombre, descripcion, unidad, stockActual: Number(stockActual) || 0, stockMinimo: Number(stockMinimo) || 0, precioUnitario: precioUnitario ? Number(precioUnitario) : null },
-    });
+      const {
+          nombre,
+          categoria,
+          unidadMedida,
+          stockActual,
+          stockMinimo,
+      } = await req.json();
+
+      if (!nombre) {
+          throw new AppError('nombre es requerido', 400);
+      }
+
+      const item = await prisma.inventoryItem.create({
+          data: {
+              nombre,
+              categoria,
+              unidadMedida,
+              stockActual: Number(stockActual) || 0,
+              stockMinimo: Number(stockMinimo) || 0,
+          },
+      });
     return NextResponse.json({ ok: true, data: item }, { status: 201 });
   } catch (e) { return handleError(e); }
 });

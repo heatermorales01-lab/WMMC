@@ -37,12 +37,12 @@ export const POST = withBlockTrabajador(async (req) => {
         ubicacion,
         descripcion,
         fechaInstalacionTentativa: fechaInstalacionTentativa ? new Date(fechaInstalacionTentativa) : null,
-        productionStages: {
-          create: [
-            { nombre: 'Diseño', orden: 1 },
-            { nombre: 'Producción', orden: 2 },
-            { nombre: 'Acabados', orden: 3 },
-            { nombre: 'Instalación', orden: 4 },
+            productionStages: {
+                create: [
+                    { etapa: 'Diseño', estado: 'PENDIENTE' },
+                    { etapa: 'Producción', estado: 'PENDIENTE' },
+                    { etapa: 'Acabados', estado: 'PENDIENTE' },
+                    { etapa: 'Instalación', estado: 'PENDIENTE' },
           ],
         },
       },
