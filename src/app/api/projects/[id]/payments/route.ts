@@ -74,4 +74,5 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
     } catch (e) {
         return handleError(e);
     }
+
 });
