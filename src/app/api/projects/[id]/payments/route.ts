@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+ï»¿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador } from '@/lib/auth';
 import { handleError } from '@/lib/errors';
@@ -25,7 +25,7 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
             },
         });
 
-        // Obtener información del proyecto
+        // Obtener informaciÃ³n del proyecto
         const project = await prisma.project.findUnique({
             where: {
                 id: params.id,
@@ -40,7 +40,7 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
             },
         });
 
-        // Si aún no existe una venta
+        // Si aÃºn no existe una venta
         if (!sale) {
             return NextResponse.json({
                 ok: true,
