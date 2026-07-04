@@ -1,4 +1,4 @@
-// @ts-ignore
+﻿// @ts-ignore
 import PdfMake from 'pdfmake/build/pdfmake.js';
 import fs from 'fs';
 import path from 'path';
@@ -8,27 +8,49 @@ const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
 
 // ─── Logo de la empresa (base64, cacheado) ─────────────
 let logoCache: string | null = null;
+
 export function getLogoBase64(): string | null {
-  if (logoCache !== null) return logoCache;
-  try {
-    const logoPath = path.join(__dirname, '..', 'assets', 'logo.png');
-    const buffer = fs.readFileSync(logoPath);
-    logoCache = `data:image/png;base64,${buffer.toString('base64')}`;
-  } catch {
-    logoCache = null;
-  }
-  return logoCache;
+    if (logoCache !== null) return logoCache;
+
+    try {
+        const logoPath = path.join(process.cwd(), 'src', 'assets', 'logo.png');
+
+        if (!fs.existsSync(logoPath)) {
+            logoCache = null;
+            return null;
+        }
+
+        const buffer = fs.readFileSync(logoPath);
+
+        logoCache = `data:image/png;base64,${buffer.toString('base64')}`;
+        return logoCache;
+
+    } catch (err) {
+        console.error("Logo error:", err);
+        logoCache = null;
+        return null;
+    }
 }
 
 export function createPrinter(): any {
-  return new (PdfMake as any)({
-    Roboto: {
-      normal:      Buffer.from(vfs['Roboto-Regular.ttf'],       'base64'),
-      bold:        Buffer.from(vfs['Roboto-Medium.ttf'],        'base64'),
-      italics:     Buffer.from(vfs['Roboto-Italic.ttf'],        'base64'),
-      bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf'],  'base64'),
-    },
-  });
+    const vfsFonts = (vfs as any).pdfMake?.vfs || vfs;
+
+    const getFont = (name: string) => {
+        const font = vfsFonts[name];
+        if (!font) {
+            throw new Error(`Font missing in vfs_fonts: ${name}`);
+        }
+        return Buffer.from(font, 'base64');
+    };
+
+    return new (PdfMake as any)({
+        Roboto: {
+            normal: getFont('Roboto-Regular.ttf'),
+            bold: getFont('Roboto-Medium.ttf'),
+            italics: getFont('Roboto-Italic.ttf'),
+            bolditalics: getFont('Roboto-MediumItalic.ttf'),
+        },
+    });
 }
 
 export function buildPdfBuffer(printer: any, docDefinition: any): Promise<Buffer> {

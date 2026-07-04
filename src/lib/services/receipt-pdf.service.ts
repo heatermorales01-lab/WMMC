@@ -72,7 +72,9 @@ export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer> 
   const totalVenta   = Number(project.sale?.total || 0);
   const pct          = totalVenta > 0 ? Math.min(100, Math.round((data.totalPagado / totalVenta) * 100)) : 0;
   const barWidth     = 435; // ancho útil aprox en puntos
-  const fillWidth    = Math.max(pct > 0 ? 12 : 0, Math.round((barWidth * pct) / 100));
+    const fillWidth = Math.max(pct > 0 ? 12 : 0, Math.round((barWidth * pct) / 100));
+    const logo = getLogoBase64();
+
 
   const doc: any = {
     pageSize: 'LETTER',
@@ -91,13 +93,15 @@ export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer> 
           {
             stack: [
               // Logo + nombre empresa lado a lado
-              {
-                columns: [
-                  ...(getLogoBase64() ? [{
-                    image: getLogoBase64()!,
-                    width: 55,
-                    margin: [0, 0, 12, 0],
-                  }] : []),
+                  {
+                      columns: [
+                          ...(logo
+                              ? [{
+                                  image: logo,
+                                  width: 55,
+                                  margin: [0, 0, 12, 0],
+                              }]
+                              : []),
                   {
                     stack: [
                       { text: 'WM MUEBLES', fontSize: 20, bold: true, color: C.primary },
