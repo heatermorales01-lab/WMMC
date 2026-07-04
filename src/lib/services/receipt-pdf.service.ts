@@ -1,8 +1,9 @@
-/**
+﻿/**
  * PDF de Recibo de Pago — WM Muebles Contemporáneos
  */
 import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import { createPrinter, buildPdfBuffer, getLogoBase64 } from '@/lib/services/pdf-printer';
+import { Prisma } from '@prisma/client';
 
 const C = {
   primary:      '#d99c0b',
@@ -35,18 +36,34 @@ function fdatetime(d?: string | Date) {
 }
 
 export interface ReceiptPDFData {
-  receipt: { numeroRecibo: string; fechaGeneracion: string };
-  payment: {
-    monto: string | number; metodoPago: string;
-    comprobanteUrl?: string; observaciones?: string; fechaPago: string;
-  };
-  project: {
-    nombreProyecto: string; ubicacion?: string;
-    client: { nombre: string; telefono?: string; correo?: string };
-    sale?: { total: string | number };
-  };
-  totalPagado: number;
-  saldo: number;
+    receipt: {
+        numeroRecibo: string;
+        fechaGeneracion: Date;
+    };
+
+    payment: {
+        monto: number;
+        metodoPago: string;
+        comprobanteUrl?: string | null;
+        observaciones?: string | null;
+        fechaPago: Date;
+    };
+
+    project: {
+        nombreProyecto: string;
+        ubicacion?: string | null;
+        client: {
+            nombre: string;
+            telefono?: string | null;
+            correo?: string | null;
+        };
+        sale?: {
+            total: number;
+        };
+    };
+
+    totalPagado: number;
+    saldo: number;
 }
 
 export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer> {
