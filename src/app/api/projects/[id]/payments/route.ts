@@ -45,10 +45,12 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
             return NextResponse.json({
                 ok: true,
                 data: {
-                    sale: null,
                     payments: [],
-                    totalPagado: 0,
-                    saldo: 0,
+                    resumen: {
+                        totalVenta: 0,
+                        totalPagado: 0,
+                        saldo: 0,
+                    },
                     project,
                 },
             });
@@ -64,10 +66,12 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
         return NextResponse.json({
             ok: true,
             data: {
-                sale,
                 payments,
-                totalPagado,
-                saldo,
+                resumen: {
+                    totalVenta: Number(sale.total ?? 0),
+                    totalPagado,
+                    saldo,
+                },
                 project,
             },
         });
