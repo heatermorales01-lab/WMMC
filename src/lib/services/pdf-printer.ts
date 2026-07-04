@@ -1,5 +1,5 @@
 ﻿// @ts-ignore
-import PdfMake from 'pdfmake/build/pdfmake.js';
+import PdfPrinter from 'pdfmake';
 import fs from 'fs';
 import path from 'path';
 
@@ -32,23 +32,25 @@ export function getLogoBase64(): string | null {
     }
 }
 
-export function createPrinter(): any {
+export function createPrinter() {
     const vfsFonts = (vfs as any).pdfMake?.vfs || vfs;
 
     const getFont = (name: string) => {
         const font = vfsFonts[name];
+
         if (!font) {
-            throw new Error(`Font missing in vfs_fonts: ${name}`);
+            throw new Error(`Fuente no encontrada: ${name}`);
         }
-        return Buffer.from(font, 'base64');
+
+        return Buffer.from(font, "base64");
     };
 
-    return new (PdfMake as any)({
+    return new (PdfPrinter as any)({
         Roboto: {
-            normal: getFont('Roboto-Regular.ttf'),
-            bold: getFont('Roboto-Medium.ttf'),
-            italics: getFont('Roboto-Italic.ttf'),
-            bolditalics: getFont('Roboto-MediumItalic.ttf'),
+            normal: getFont("Roboto-Regular.ttf"),
+            bold: getFont("Roboto-Medium.ttf"),
+            italics: getFont("Roboto-Italic.ttf"),
+            bolditalics: getFont("Roboto-MediumItalic.ttf"),
         },
     });
 }
