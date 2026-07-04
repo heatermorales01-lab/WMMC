@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { CreditCard, Plus, Receipt, Download, ArrowRight, FolderKanban } from 'lucide-react';
@@ -19,28 +19,35 @@ export default function PaymentsPage() {
   const [form, setForm] = useState({ monto: '', observaciones: '', comprobanteUrl: '' });
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    if (!proyectoId) {
-      try {
-        const projects: Project[] = await projectsApi.list();
-        // Solo proyectos con venta activa (donde puede haber pagos)
-        setAllProjects(projects.filter((p) => p.sale));
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-    try {
-      const [proj, payments] = await Promise.all([
-        projectsApi.get(proyectoId),
-        paymentsApi.byProject(proyectoId),
-      ]);
-      setProject(proj);
-      setPaymentsData(payments);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const load = async () => {
+        if (!proyectoId) {
+            try {
+                const projects: Project[] = await projectsApi.list();
+                setAllProjects(projects.filter((p) => p.sale));
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        try {
+            const proj = await projectsApi.get(proyectoId);
+
+            setProject(proj);
+
+            if (proj.sale) {
+                const payments = await paymentsApi.byProject(proyectoId);
+                setPaymentsData(payments);
+            } else {
+                setPaymentsData({
+                    resumen: null,
+                    payments: [],
+                });
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
   useEffect(() => { load(); }, [proyectoId]);
 

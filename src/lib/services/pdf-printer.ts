@@ -13,7 +13,7 @@ export function getLogoBase64(): string | null {
     if (logoCache !== null) return logoCache;
 
     try {
-        const logoPath = path.join(process.cwd(), 'src', 'assets', 'logo.png');
+        const logoPath = path.join(process.cwd(), 'public', 'logo.png');
 
         if (!fs.existsSync(logoPath)) {
             logoCache = null;
