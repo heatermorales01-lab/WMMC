@@ -108,7 +108,8 @@ export default function PaymentsPage() {
                       <td>{p.client?.nombre || '—'}</td>
                       <td className="font-semibold">{p.sale ? formatCRC(p.sale.total) : '—'}</td>
                       <td>
-                        <Link href={`/pagos?proyecto=${p.id}`} className="btn-ghost btn-sm">
+                              <Link href={`/pagos?proyecto=${p.id}`}
+                                  prefetch={false} className="btn-ghost btn-sm">
                           Ver pagos <ArrowRight size={12} />
                         </Link>
                       </td>
