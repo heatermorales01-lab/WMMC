@@ -7,10 +7,11 @@ import { paymentsApi, projectsApi, pdfApi } from '@/lib/api';
 import type { Payment, Project } from '@/types';
 import { formatCRC, formatDate } from '@/types';
 import { PageLoader, Modal, FormGroup, Spinner, EmptyState, MoneyInput } from '@/components/ui';
+import { useSearchParams } from 'next/navigation';
 
 export default function PaymentsPage() {
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const proyectoId = searchParams.get('proyecto');
+    const searchParams = useSearchParams();
+    const proyectoId = searchParams.get('proyecto');
   const [project, setProject] = useState<Project | null>(null);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [paymentsData, setPaymentsData] = useState<any>(null);
