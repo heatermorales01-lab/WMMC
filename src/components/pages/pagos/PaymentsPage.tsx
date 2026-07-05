@@ -1,7 +1,8 @@
 ﻿'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { CreditCard, Plus, Receipt, Download, ArrowRight, FolderKanban } from 'lucide-react';
+import {
+    CreditCard, Plus, Receipt, Download, ArrowRight,ArrowLeft, FolderKanban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { paymentsApi, projectsApi, pdfApi } from '@/lib/api';
 import type { Payment, Project } from '@/types';
@@ -130,27 +131,41 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Pagos</h1>
-          {project && (
-            <Link href={`/proyectos/${project.id}`} className="text-sm text-wood-600 hover:underline">
-              ← {project.nombreProyecto}
-            </Link>
-          )}
-        </div>
-        {project && (
-          project.sale ? (
-            <button className="btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={15} /> Registrar pago
-            </button>
-          ) : (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Este proyecto no tiene una venta activa (la cotización debe estar APROBADA) — no se pueden registrar pagos.
-            </span>
-          )
-        )}
-      </div>
+          <div className="page-header">
+              <div className="space-y-2">
+                  <Link
+                      href="/pagos"
+                      className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-wood-600 transition-colors"
+                  >
+                      <ArrowLeft size={15} />
+                      Volver a proyectos con venta
+                  </Link>
+
+                  <h1 className="page-title">Pagos</h1>
+
+                  {project && (
+                      <Link
+                          href={`/proyectos/${project.id}`}
+                          className="text-sm text-wood-600 hover:underline"
+                      >
+                          {project.nombreProyecto}
+                      </Link>
+                  )}
+              </div>
+
+              {project && (
+                  project.sale ? (
+                      <button className="btn-primary" onClick={() => setShowCreate(true)}>
+                          <Plus size={15} />
+                          Registrar pago
+                      </button>
+                  ) : (
+                      <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          Este proyecto no tiene una venta activa (la cotización debe estar APROBADA) — no se pueden registrar pagos.
+                      </span>
+                  )
+              )}
+          </div>
 
       {/* Resumen financiero */}
       {resumen && (
