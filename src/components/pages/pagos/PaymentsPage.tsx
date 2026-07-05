@@ -32,6 +32,8 @@ export default function PaymentsPage() {
 
         try {
             const proj = await projectsApi.get(proyectoId);
+            console.log("PROYECTO:", proj);
+            console.log("SALE:", proj.sale);
 
             setProject(proj);
 
