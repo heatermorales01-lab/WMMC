@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador, withAdmin } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
@@ -23,8 +23,32 @@ export const PUT = withBlockTrabajador(async (req, { params }) => {
 });
 
 export const DELETE = withAdmin(async (_req, { params }) => {
-  try {
-    await prisma.client.delete({ where: { id: params.id } });
-    return NextResponse.json({ ok: true, message: 'Cliente eliminado' });
-  } catch (e) { return handleError(e); }
+    try {
+        const projects = await prisma.project.count({
+            where: {
+                clientId: params.id,
+            },
+        });
+
+        if (projects > 0) {
+            throw new AppError(
+                'No se puede eliminar este cliente porque tiene proyectos asociados.',
+                400
+            );
+        }
+
+        await prisma.client.delete({
+            where: {
+                id: params.id,
+            },
+        });
+
+        return NextResponse.json({
+            ok: true,
+            message: 'Cliente eliminado',
+        });
+
+    } catch (e) {
+        return handleError(e);
+    }
 });
