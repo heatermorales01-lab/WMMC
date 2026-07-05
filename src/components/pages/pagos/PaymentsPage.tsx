@@ -9,6 +9,7 @@ import type { Payment, Project } from '@/types';
 import { formatCRC, formatDate } from '@/types';
 import { PageLoader, Modal, FormGroup, Spinner, EmptyState, MoneyInput } from '@/components/ui';
 import { useSearchParams } from 'next/navigation';
+import { Trash2 } from 'lucide-react';
 
 export default function PaymentsPage() {
     const searchParams = useSearchParams();
@@ -71,6 +72,28 @@ export default function PaymentsPage() {
       setSaving(false);
     }
   };
+
+    const handleDelete = async (paymentId: string) => {
+
+        if (!confirm('¿Eliminar este pago y su recibo?'))
+            return;
+
+        try {
+
+            await paymentsApi.delete(paymentId);
+
+            toast.success('Pago eliminado');
+
+            load();
+
+        } catch (err: any) {
+
+            toast.error(err.response?.data?.error || 'Error al eliminar');
+
+        }
+
+    };
+
 
   if (loading) return <PageLoader />;
 
@@ -197,7 +220,8 @@ export default function PaymentsPage() {
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th></tr>
+                          <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th>
+                              <th>Acciones</th></tr>
             </thead>
             <tbody>
               {payments.length === 0 ? (
@@ -225,7 +249,14 @@ export default function PaymentsPage() {
                               .catch(() => toast.error('Error al generar recibo'))}
                           >
                             <Download size={13} />
-                          </button>
+                                    </button>
+                                    <button
+                                        className="btn-danger btn-sm"
+                                        onClick={() => handleDelete(p.id)}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+
                         </div>
                       ) : '—'}
                     </td>

@@ -13,8 +13,15 @@ export const POST = withBlockTrabajador(async (req) => {
             metodoPago,
         } = await req.json();
 
-        if (!projectId || !monto) {
+        if (!projectId || monto === undefined || monto === null) {
             throw new AppError("projectId y monto son requeridos", 400);
+        }
+
+        if (Number(monto) <= 0) {
+            throw new AppError(
+                "El monto debe ser mayor que cero.",
+                400
+            );
         }
 
         const sale = await prisma.sale.findFirst({
@@ -24,6 +31,27 @@ export const POST = withBlockTrabajador(async (req) => {
         if (!sale) {
             throw new AppError(
                 "Este proyecto no tiene una venta activa.",
+                400
+            );
+        }
+
+        // Calcular cuánto se ha pagado hasta el momento
+        const pagosActuales = await prisma.payment.aggregate({
+            where: {
+                projectId,
+            },
+            _sum: {
+                monto: true,
+            },
+        });
+
+        const totalPagado = Number(pagosActuales._sum.monto ?? 0);
+        const saldoPendiente = Number(sale.total) - totalPagado;
+
+        // Validar que el monto no exceda el saldo
+        if (Number(monto) > saldoPendiente) {
+            throw new AppError(
+                `El monto excede el saldo pendiente. Saldo disponible: ₡${saldoPendiente.toLocaleString('es-CR')}`,
                 400
             );
         }

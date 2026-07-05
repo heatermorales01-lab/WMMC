@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 // En Next.js el frontend llama a /api (mismo dominio) — no se necesita URL separada del backend
 const api = axios.create({ baseURL: '/api' });
@@ -88,8 +88,12 @@ export const paymentsApi = {
   getSchedule: (projectId: string) =>
     api.get(`/projects/${projectId}/payment-schedule`).then((r) => r.data.data),
   setSchedule: (projectId: string, cuotas: any[]) =>
-    api.post(`/projects/${projectId}/payment-schedule`, { cuotas }).then((r) => r.data.data),
+        api.post(`/projects/${projectId}/payment-schedule`, { cuotas }).then((r) => r.data.data),
+    delete: (paymentId: string) =>
+        api.delete(`/payments/${paymentId}`).then(r => r.data),
 };
+
+
 
 // ─── CATÁLOGO ──────────────────────────────────────────
 export const catalogApi = {

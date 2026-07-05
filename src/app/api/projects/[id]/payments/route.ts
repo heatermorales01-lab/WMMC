@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador } from '@/lib/auth';
 import { handleError } from '@/lib/errors';
+import { withAdmin } from '@/lib/auth';
 
 export const GET = withBlockTrabajador(async (_req, { params }) => {
     try {
@@ -78,5 +79,47 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
     } catch (e) {
         return handleError(e);
     }
+
+});
+
+export const DELETE = withAdmin(async (_req, { params }) => {
+
+    const payment = await prisma.payment.findUnique({
+        where: { id: params.id },
+        include: {
+            receipt: true
+        }
+    });
+
+    if (!payment) {
+        return NextResponse.json(
+            { error: "Pago no encontrado" },
+            { status: 404 }
+        );
+    }
+
+    await prisma.$transaction(async (tx) => {
+
+        if (payment.receipt) {
+
+            await tx.receipt.delete({
+                where: {
+                    id: payment.receipt.id
+                }
+            });
+
+        }
+
+        await tx.payment.delete({
+            where: {
+                id: payment.id
+            }
+        });
+
+    });
+
+    return NextResponse.json({
+        ok: true
+    });
 
 });
