@@ -226,7 +226,7 @@ export default function PaymentsPage() {
             <tbody>
               {payments.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>
+                  <td colSpan={5}>
                     <EmptyState icon={<CreditCard size={24} />} title="Sin pagos registrados" />
                   </td>
                 </tr>
@@ -250,16 +250,17 @@ export default function PaymentsPage() {
                           >
                             <Download size={13} />
                                     </button>
-                                    <button
-                                        className="btn-danger btn-sm"
-                                        onClick={() => handleDelete(p.id)}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-
                         </div>
                       ) : '—'}
-                    </td>
+                        </td>
+                        <td>
+                            <button
+                                className="btn-danger btn-sm"
+                                onClick={() => handleDelete(p.id)}
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </td>
                   </tr>
                 ))
               )}
