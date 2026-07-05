@@ -74,24 +74,17 @@ export default function PaymentsPage() {
   };
 
     const handleDelete = async (paymentId: string) => {
-
-        if (!confirm('¿Eliminar este pago y su recibo?'))
-            return;
+        if (!confirm('¿Desea eliminar este pago y su recibo?')) return;
 
         try {
-
             await paymentsApi.delete(paymentId);
 
             toast.success('Pago eliminado');
 
             load();
-
-        } catch (err: any) {
-
-            toast.error(err.response?.data?.error || 'Error al eliminar');
-
+        } catch {
+            toast.error('No se pudo eliminar el pago');
         }
-
     };
 
 

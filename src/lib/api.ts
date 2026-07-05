@@ -89,8 +89,8 @@ export const paymentsApi = {
     api.get(`/projects/${projectId}/payment-schedule`).then((r) => r.data.data),
   setSchedule: (projectId: string, cuotas: any[]) =>
         api.post(`/projects/${projectId}/payment-schedule`, { cuotas }).then((r) => r.data.data),
-    delete: (paymentId: string) =>
-        api.delete(`/payments/${paymentId}`).then(r => r.data),
+    delete: (id: string) =>
+        api.delete(`/payments/${id}`).then((r) => r.data),
 };
 
 
