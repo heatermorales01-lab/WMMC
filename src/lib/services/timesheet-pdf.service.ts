@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PDF de Reporte Semanal de Horario — WM Muebles Contemporáneos
  */
 import { createPrinter, buildPdfBuffer, getLogoBase64 } from '@/lib/services/pdf-printer';
@@ -145,11 +145,12 @@ export async function generateWeeklyTimesheetPDF(data: WeeklyReportData): Promis
     content: [
       {
         columns: [
-          ...(getLogoBase64() ? [{ image: getLogoBase64()!, width: 60, marginRight: 10 }] : []),
+              ...(getLogoBase64() ? [{ image: getLogoBase64()!, width: 70, marginRight: 10 }] : []),
           {
             stack: [
-              { text: 'WM MUEBLES', fontSize: 20, bold: true, color: C.primary },
-              { text: 'CONTEMPORÁNEOS', fontSize: 10, bold: true, color: C.primaryDark, marginTop: 2 },
+                  { text: 'WM MUEBLES', fontSize: 22, bold: true, color: C.primary },
+                  { text: 'CONTEMPORÁNEOS', fontSize: 11, bold: true, color: C.primaryDark, marginTop: 2 },
+                  { text: 'Fabricación e instalación a medida', fontSize: 8, color: C.slate500, marginTop: 3 },
             ],
             width: '*',
           },

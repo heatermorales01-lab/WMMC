@@ -88,46 +88,72 @@ export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer> 
     }),
     content: [
       // ── HEADER ──────────────────────────────────────
-      {
-        columns: [
-          {
-            stack: [
-              // Logo + nombre empresa lado a lado
-                  {
-                      columns: [
-                          ...(logo
-                              ? [{
-                                  image: logo,
-                                  width: 55,
-                                  margin: [0, 0, 12, 0],
-                              }]
-                              : []),
-                  {
+        {
+            columns: [
+                ...(logo
+                    ? [{
+                        image: logo,
+                        width: 70,
+                        marginRight: 10,
+                    }]
+                    : []),
+
+                {
                     stack: [
-                      { text: 'WM MUEBLES', fontSize: 20, bold: true, color: C.primary },
-                      { text: 'CONTEMPORÁNEOS', fontSize: 10, bold: true, color: C.primaryDark, marginTop: 2 },
-                      { text: 'Fabricación e instalación a medida', fontSize: 8, color: C.slate500, marginTop: 3 },
+                        {
+                            text: 'WM MUEBLES',
+                            fontSize: 22,
+                            bold: true,
+                            color: C.primary,
+                        },
+                        {
+                            text: 'CONTEMPORÁNEOS',
+                            fontSize: 11,
+                            bold: true,
+                            color: C.primaryDark,
+                            marginTop: 2,
+                        },
+                        {
+                            text: 'Fabricación e instalación a medida',
+                            fontSize: 8,
+                            color: C.slate500,
+                            marginTop: 3,
+                        },
                     ],
                     width: '*',
-                  },
-                ],
-                columnGap: 0,
-              },
+                },
+
+                {
+                    width: 200,
+                    stack: [
+                        {
+                            text: 'RECIBO DE PAGO',
+                            fontSize: 13,
+                            bold: true,
+                            color: C.slate700,
+                            alignment: 'right',
+                        },
+                        {
+                            text: receipt.numeroRecibo,
+                            fontSize: 11,
+                            color: C.primary,
+                            bold: true,
+                            alignment: 'right',
+                            marginTop: 3,
+                        },
+                        {
+                            text: `Emitido: ${fdate(receipt.fechaGeneracion)}`,
+                            fontSize: 8,
+                            color: C.slate500,
+                            alignment: 'right',
+                            marginTop: 2,
+                        },
+                    ],
+                },
             ],
-            width: '*',
-          },
-          {
-            stack: [
-              { text: 'RECIBO DE PAGO', fontSize: 13, bold: true, color: C.slate700, alignment: 'right' },
-              { text: receipt.numeroRecibo, fontSize: 11, color: C.primary, bold: true, alignment: 'right', marginTop: 3 },
-              { text: `Emitido: ${fdate(receipt.fechaGeneracion)}`, fontSize: 8, color: C.slate500, alignment: 'right', marginTop: 2 },
-            ],
-            width: 'auto',
-          },
-        ],
-        columnGap: 20,
-        marginBottom: 18,
-      },
+            columnGap: 20,
+            marginBottom: 22,
+        }, 
 
       // ── SELLO DE PAGO ────────────────────────────────
       {
