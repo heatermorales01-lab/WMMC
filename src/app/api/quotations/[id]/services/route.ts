@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
@@ -17,10 +17,25 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
 
     const subtotal = montoManual != null ? Number(montoManual) : Number(service.precioBase);
 
-    await prisma.$transaction(async (tx: any) => {
-      await tx.quotationService.create({
-        data: { quotationId: params.id, serviceId, subtotal, montoManual: montoManual != null ? Number(montoManual) : null },
-      });
+      await prisma.$transaction(async (tx: any) => {
+
+          console.log("=== DATOS A INSERTAR ===");
+          console.log({
+              quotationId: params.id,
+              serviceId,
+              subtotal,
+              montoManual: montoManual != null ? Number(montoManual) : null,
+          });
+
+
+        await tx.quotationService.create({
+            data: {
+                quotationId: params.id,
+                serviceId,
+                subtotal,
+                montoManual: montoManual != null ? Number(montoManual) : null,
+            },
+        });
       await recalcularTotalesCotizacion(tx, params.id);
     });
 
