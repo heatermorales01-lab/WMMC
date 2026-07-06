@@ -6,7 +6,11 @@ import { QUOTATION_INCLUDE, recalcularTotalesCotizacion } from '@/lib/quotation-
 
 export const POST = withBlockTrabajador(async (req, { params }) => {
   try {
-    const { serviceId, montoManual } = await req.json();
+      const {
+          serviceId,
+          cantidad = 1,
+          montoManual,
+      } = await req.json();
     if (!serviceId) throw new AppError('serviceId es requerido', 400);
     const q = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!q) throw new AppError('Cotización no encontrada', 404);
@@ -15,7 +19,10 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
     const service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) throw new AppError('Servicio no encontrado', 404);
 
-    const subtotal = montoManual != null ? Number(montoManual) : Number(service.precioBase);
+      const subtotal =
+          montoManual != null
+              ? Number(montoManual)
+              : Number(service.precioBase) * Number(cantidad);
 
       await prisma.$transaction(async (tx: any) => {
 
@@ -28,14 +35,15 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
           });
 
 
-        await tx.quotationService.create({
-            data: {
-                quotationId: params.id,
-                serviceId,
-                subtotal,
-                montoManual: montoManual != null ? Number(montoManual) : null,
-            },
-        });
+          await tx.quotationService.create({
+              data: {
+                  quotationId: params.id,
+                  serviceId,
+                  cantidad: Number(cantidad),
+                  subtotal,
+                  montoManual: montoManual != null ? Number(montoManual) : null,
+              }
+          });
       await recalcularTotalesCotizacion(tx, params.id);
     });
 
