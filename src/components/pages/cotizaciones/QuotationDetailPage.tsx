@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -584,6 +584,23 @@ export default function QuotationDetailPage({ id }: { id: string }) {
     }
   };
 
+    const handleCancelApproval = async () => {
+        if (!confirm("¿Desea anular la aprobación de esta cotización? Se eliminará la venta, pagos, recibos y plan de pagos.")) {
+            return;
+        }
+
+        try {
+            await quotationsApi.cancelApproval(quotation.id);
+
+            toast.success("Aprobación anulada");
+
+            await load(); // vuelve a cargar la cotización
+        } catch (err: any) {
+            toast.error(err.response?.data?.error || "No se pudo anular la aprobación");
+        }
+    };
+
+
   if (loading || !quotation) return <PageLoader />;
 
   const isEditable = quotation.estado === 'BORRADOR';
@@ -644,7 +661,17 @@ export default function QuotationDetailPage({ id }: { id: string }) {
                 <XCircle size={14} /> Rechazar
               </button>
             </>
-          )}
+                  )}
+
+                  {quotation.estado === 'APROBADA' && (
+                      <button
+                          className="btn-warning"
+                          onClick={handleCancelApproval}
+                      >
+                          <XCircle size={14} />
+                          Anular aprobación
+                      </button>
+                  )}
         </div>
       </div>
 

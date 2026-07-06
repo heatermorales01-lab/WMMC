@@ -77,7 +77,9 @@ export const quotationsApi = {
   addService: (id: string, data: any) =>
     api.post(`/quotations/${id}/services`, data).then((r) => r.data.data),
   removeService: (serviceQuotationId: string) =>
-    api.delete(`/quotations/services/${serviceQuotationId}`).then((r) => r.data),
+        api.delete(`/quotations/services/${serviceQuotationId}`).then((r) => r.data),
+    cancelApproval: (id: string) =>
+        api.post(`/quotations/${id}/cancel-approval`).then((r) => r.data.data),
 };
 
 // ─── PAGOS ─────────────────────────────────────────────
