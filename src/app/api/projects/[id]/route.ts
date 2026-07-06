@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth, withAdmin, withBlockTrabajador } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
@@ -32,31 +32,116 @@ export const PUT = withAuth(async (req, { params }) => {
 });
 
 export const DELETE = withAdmin(async (_req, { params }) => {
-  try {
-    await prisma.$transaction(async (tx: any) => {
-      const project = await tx.project.findUnique({ where: { id: params.id }, include: { sale: { include: { payments: { include: { receipt: true } } } } } });
-      if (!project) throw new AppError('Proyecto no encontrado', 404);
-      if (project.sale) {
-        for (const payment of project.sale.payments ?? []) {
-          if (payment.receipt) await tx.receipt.delete({ where: { id: payment.receipt.id } });
-        }
-        await tx.payment.deleteMany({ where: { saleId: project.sale.id } });
-        await tx.paymentSchedule.deleteMany({ where: { projectId: params.id } });
-        await tx.sale.delete({ where: { id: project.sale.id } });
-      }
-      const quotations = await tx.quotation.findMany({ where: { projectId: params.id } });
-      for (const q of quotations) {
-        const items = await tx.quotationItem.findMany({ where: { quotationId: q.id } });
-        for (const item of items) await tx.quotationItemExtra.deleteMany({ where: { quotationItemId: item.id } });
-        await tx.quotationItem.deleteMany({ where: { quotationId: q.id } });
-        await tx.quotationService.deleteMany({ where: { quotationId: q.id } });
-        await tx.quotation.delete({ where: { id: q.id } });
-      }
-      await tx.productionStage.deleteMany({ where: { projectId: params.id } });
-      await tx.projectFile.deleteMany({ where: { projectId: params.id } });
-      await tx.calendarEvent.deleteMany({ where: { projectId: params.id } });
-      await tx.project.delete({ where: { id: params.id } });
-    });
-    return NextResponse.json({ ok: true, message: 'Proyecto eliminado' });
-  } catch (e) { return handleError(e); }
+    try {
+        await prisma.$transaction(async (tx: any) => {
+
+            const project = await tx.project.findUnique({
+                where: { id: params.id },
+                include: {
+                    sale: true,
+                },
+            });
+
+            if (!project) {
+                throw new AppError('Proyecto no encontrado', 404);
+            }
+
+            // Obtener pagos del proyecto
+            const payments = await tx.payment.findMany({
+                where: {
+                    projectId: params.id,
+                },
+                include: {
+                    receipt: true,
+                },
+            });
+
+            // Eliminar recibos
+            for (const payment of payments) {
+                if (payment.receipt) {
+                    await tx.receipt.delete({
+                        where: { id: payment.receipt.id },
+                    });
+                }
+            }
+
+            // Eliminar pagos
+            await tx.payment.deleteMany({
+                where: {
+                    projectId: params.id,
+                },
+            });
+
+            // Eliminar plan de pagos
+            await tx.paymentSchedule.deleteMany({
+                where: {
+                    projectId: params.id,
+                },
+            });
+
+            // Eliminar venta (si existe)
+            if (project.sale) {
+                await tx.sale.delete({
+                    where: {
+                        id: project.sale.id,
+                    },
+                });
+            }
+
+            // Eliminar cotizaciones
+            const quotations = await tx.quotation.findMany({
+                where: { projectId: params.id },
+            });
+
+            for (const q of quotations) {
+                const items = await tx.quotationItem.findMany({
+                    where: { quotationId: q.id },
+                });
+
+                for (const item of items) {
+                    await tx.quotationItemExtra.deleteMany({
+                        where: { quotationItemId: item.id },
+                    });
+                }
+
+                await tx.quotationItem.deleteMany({
+                    where: { quotationId: q.id },
+                });
+
+                await tx.quotationService.deleteMany({
+                    where: { quotationId: q.id },
+                });
+
+                await tx.quotation.delete({
+                    where: { id: q.id },
+                });
+            }
+
+            // Eliminar producción, archivos, calendario y proyecto
+            await tx.productionStage.deleteMany({
+                where: { projectId: params.id },
+            });
+
+            await tx.projectFile.deleteMany({
+                where: { projectId: params.id },
+            });
+
+            await tx.calendarEvent.deleteMany({
+                where: { projectId: params.id },
+            });
+
+            await tx.project.delete({
+                where: { id: params.id },
+            });
+
+        });
+
+        return NextResponse.json({
+            ok: true,
+            message: 'Proyecto eliminado',
+        });
+
+    } catch (e) {
+        return handleError(e);
+    }
 });
