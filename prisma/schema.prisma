@@ -1,5 +1,6 @@
 // This is your Prisma schema file
 // WM Muebles Contemporáneos ERP
+//Prueba
 
 generator client {
   provider = "prisma-client-js"
