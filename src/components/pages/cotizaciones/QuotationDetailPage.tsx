@@ -544,7 +544,16 @@ export default function QuotationDetailPage({ id }: { id: string }) {
       toast.error('Ingresá el monto'); return;
     }
     setSavingService(true);
-    try {
+      try {
+          console.log("ENVIANDO", {
+              serviceId: serviceForm.serviceId,
+              cantidad: serviceForm.cantidad,
+              montoManual: serviceForm.usarMontoManual
+                  ? Number(serviceForm.montoManual)
+                  : undefined,
+          });
+
+
       await quotationsApi.addService(id!, {
         serviceId: serviceForm.serviceId,
         cantidad: serviceForm.cantidad,

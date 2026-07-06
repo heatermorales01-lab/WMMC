@@ -6,11 +6,16 @@ import { QUOTATION_INCLUDE, recalcularTotalesCotizacion } from '@/lib/quotation-
 
 export const POST = withBlockTrabajador(async (req, { params }) => {
   try {
+      const body = await req.json();
+
+      console.log("BODY RECIBIDO:");
+      console.log(body);
+
       const {
           serviceId,
           cantidad = 1,
           montoManual,
-      } = await req.json();
+      } = body;
     if (!serviceId) throw new AppError('serviceId es requerido', 400);
     const q = await prisma.quotation.findUnique({ where: { id: params.id } });
     if (!q) throw new AppError('Cotización no encontrada', 404);
@@ -33,6 +38,10 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
               subtotal,
               montoManual: montoManual != null ? Number(montoManual) : null,
           });
+
+          console.log("Cantidad:", cantidad);
+          console.log("Precio base:", service.precioBase);
+          console.log("Subtotal:", subtotal);
 
 
           await tx.quotationService.create({
