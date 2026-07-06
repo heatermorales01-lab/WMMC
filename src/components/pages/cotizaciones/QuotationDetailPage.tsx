@@ -665,7 +665,7 @@ export default function QuotationDetailPage({ id }: { id: string }) {
 
                   {quotation.estado === 'APROBADA' && (
                       <button
-                          className="btn-warning"
+                          className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
                           onClick={handleCancelApproval}
                       >
                           <XCircle size={14} />
