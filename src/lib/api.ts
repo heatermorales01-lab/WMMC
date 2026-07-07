@@ -74,7 +74,12 @@ export const quotationsApi = {
     api.patch(`/quotations/items/${itemId}/name`, { nombrePersonalizado }).then((r) => r.data.data),
   updateItemFondo: (itemId: string, fondoPersonalizado: string | null) =>
     api.patch(`/quotations/items/${itemId}/fondo`, { fondoPersonalizado }).then((r) => r.data.data),
-  addService: (id: string, data: any) =>
+
+    updateItem: (itemId: string, data: any) =>
+        api.patch(`/quotations/items/${itemId}`, data).then((r) => r.data.data),
+
+
+    addService: (id: string, data: any) =>
     api.post(`/quotations/${id}/services`, data).then((r) => r.data.data),
   removeService: (serviceQuotationId: string) =>
         api.delete(`/quotations/services/${serviceQuotationId}`).then((r) => r.data),

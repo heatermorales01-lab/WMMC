@@ -14,13 +14,14 @@ import { PageLoader, QuotationBadge, Modal, FormGroup, Spinner, Confirm, MoneyIn
 
 // ─── Formulario agregar mueble ──────────────────────────
 function AddItemForm({
-  furnitureTypes, materials, countertopTypes, extras,
+  furnitureTypes, materials, countertopTypes, extras, item,
   onAdd, onClose,
 }: {
   furnitureTypes: FurnitureType[];
   materials: Material[];
   countertopTypes: CountertopType[];
-  extras: Extra[];
+        extras: Extra[];
+        item?: QuotationItem | null;
   onAdd: (data: any) => Promise<void>;
   onClose: () => void;
 }) {
@@ -39,7 +40,35 @@ function AddItemForm({
     cascada: 'NINGUNA',
     extras: [] as { extraId: string; cantidad: number }[],
   });
-  const [saving, setSaving] = useState(false);
+    const [saving, setSaving] = useState(false);
+    useEffect(() => {
+        if (!item) return;
+
+        setForm({
+            furnitureTypeId: item.furnitureType.id,
+            materialId: item.material.id,
+            countertopTypeId: item.countertopType?.id || '',
+
+            descripcion: item.descripcion || '',
+            nombrePersonalizado: item.nombrePersonalizado || '',
+
+            largo: item.largo,
+            alto: item.alto || '',
+            ancho: item.ancho || '',
+            cantidad: item.cantidad,
+
+            estiloDoble: (item as any).estiloDoble || 'FUNCIONAL',
+            tipoCajonEspecial: (item as any).tipoCajonEspecial || false,
+            cascada: (item as any).cascada || 'NINGUNA',
+
+            extras:
+                item.quotationItemExtras?.map((e: any) => ({
+                    extraId: e.extra.id,
+                    cantidad: e.cantidad,
+                })) || [],
+        });
+
+    }, [item]);
 
   const selectedType = furnitureTypes.find((f) => f.id === form.furnitureTypeId);
   const typeName = selectedType?.nombre || '';
@@ -480,7 +509,18 @@ export default function QuotationDetailPage({ id }: { id: string }) {
     await load();
   };
 
+    const handleEditItem = async (data: any) => {
+        if (!editingItem) return;
 
+        await quotationsApi.updateItem(editingItem.id, data);
+
+        toast.success("Mueble actualizado");
+
+        setEditingItem(null);
+        setShowAddItem(false);
+
+        await load();
+    };
 
   const handleRemoveService = async () => {
     if (!deleteServiceId) return;
@@ -710,7 +750,10 @@ export default function QuotationDetailPage({ id }: { id: string }) {
         <div className="card-header">
           <h2 className="font-display font-bold text-slate-900">Muebles</h2>
           {isEditable && (
-            <button className="btn-primary btn-sm" onClick={() => setShowAddItem(true)}>
+                      <button className="btn-primary btn-sm" onClick={() => {
+                          setEditingItem(null);
+                          setShowAddItem(true);
+                      }}>
               <Plus size={13} /> Agregar mueble
             </button>
           )}
@@ -722,7 +765,8 @@ export default function QuotationDetailPage({ id }: { id: string }) {
             quotation.quotationItems.map((item) => (
               <QuotationItemRow
                 key={item.id}
-                item={item}
+                    item={item}
+
                 onDelete={isEditable ? (iid) => setDeleteItemId(iid) : () => {}}
                     onEdit={(item) => {
                         setEditingItem(item);
@@ -878,14 +922,22 @@ export default function QuotationDetailPage({ id }: { id: string }) {
 
       {/* Modal agregar mueble */}
       {showAddItem && (
-        <Modal title="Agregar mueble" onClose={() => setShowAddItem(false)} size="lg">
+              <Modal title={editingItem ? "Editar mueble" : "Agregar mueble"} onClose={() => {
+                  setShowAddItem(false);
+                  setEditingItem(null);
+              }} size="lg">
           <AddItemForm
             furnitureTypes={catalog.furnitureTypes || []}
             materials={catalog.materials || []}
             countertopTypes={catalog.countertopTypes || []}
             extras={catalog.extras || []}
-            onAdd={handleAddItem}
-            onClose={() => setShowAddItem(false)}
+            item={editingItem}
+
+            onAdd={editingItem ? handleEditItem : handleAddItem}
+                 onClose={() => {
+                    setShowAddItem(false);
+                    setEditingItem(null);
+                 }}
           />
         </Modal>
       )}
