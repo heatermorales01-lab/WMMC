@@ -244,9 +244,10 @@ function AddItemForm({
 }
 
 // ─── Item de cotización ─────────────────────────────────
-function QuotationItemRow({ item, onDelete, onNameUpdate, onFondoUpdate }: {
+function QuotationItemRow({ item, onDelete, onEdit,onNameUpdate, onFondoUpdate }: {
   item: QuotationItem;
-  onDelete: (id: string) => void;
+    onDelete: (id: string) => void;
+    onEdit: (item: QuotationItem) => void;
   onNameUpdate: (id: string, nombre: string | null) => void;
   onFondoUpdate: (id: string, fondo: string | null) => void;
 }) {
@@ -386,10 +387,27 @@ function QuotationItemRow({ item, onDelete, onNameUpdate, onFondoUpdate }: {
         <div className="text-right shrink-0">
           <p className="font-bold text-slate-900">{formatCRC(item.subtotal)}</p>
           <p className="text-xs text-slate-400">{formatCRC(item.precioUnitario)} c/u</p>
-        </div>
-        <button className="btn-ghost btn-sm text-danger ml-1 shrink-0" onClick={() => onDelete(item.id)}>
-          <Trash2 size={14} />
-        </button>
+              </div>
+
+              <div className="flex items-center gap-1 ml-1 shrink-0">
+
+                  <button
+                      className="btn-ghost btn-sm text-wood-600"
+                      onClick={() => onEdit(item)}
+                      title="Editar mueble"
+                  >
+                      <Pencil size={14} />
+                  </button>
+
+                  <button
+                      className="btn-ghost btn-sm text-danger"
+                      onClick={() => onDelete(item.id)}
+                      title="Eliminar"
+                  >
+                      <Trash2 size={14} />
+                  </button>
+
+              </div>
       </div>
       {expanded && item.quotationItemExtras.length > 0 && (
         <div className="bg-slate-50 px-6 py-3 border-t space-y-1">
@@ -411,7 +429,8 @@ export default function QuotationDetailPage({ id }: { id: string }) {
   const [quotation, setQuotation] = useState<Quotation | null>(null);
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState<any>({});
-  const [showAddItem, setShowAddItem] = useState(false);
+    const [showAddItem, setShowAddItem] = useState(false);
+    const [editingItem, setEditingItem] = useState<QuotationItem | null>(null);
   const [showAddService, setShowAddService] = useState(false);
   const [confirmStatus, setConfirmStatus] = useState<string | null>(null);
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
@@ -460,6 +479,8 @@ export default function QuotationDetailPage({ id }: { id: string }) {
     setDeleteItemId(null);
     await load();
   };
+
+
 
   const handleRemoveService = async () => {
     if (!deleteServiceId) return;
@@ -703,7 +724,11 @@ export default function QuotationDetailPage({ id }: { id: string }) {
                 key={item.id}
                 item={item}
                 onDelete={isEditable ? (iid) => setDeleteItemId(iid) : () => {}}
-                onNameUpdate={(iid, nombre) => {
+                    onEdit={(item) => {
+                        setEditingItem(item);
+                        setShowAddItem(true);
+                    }}
+                    onNameUpdate={(iid, nombre) => {
                   setQuotation((q) => q ? ({
                     ...q,
                     quotationItems: q.quotationItems.map((it) =>
