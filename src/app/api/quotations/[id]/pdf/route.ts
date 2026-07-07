@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
@@ -9,7 +9,9 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
   try {
     const q = await prisma.quotation.findUnique({ where: { id: params.id }, include: QUOTATION_INCLUDE });
     if (!q) throw new AppError('Cotización no encontrada', 404);
-    const buffer = await generateQuotationPDF(q as any);
+      const buffer = await generateQuotationPDF({
+          quotation: q as any,
+      });
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
