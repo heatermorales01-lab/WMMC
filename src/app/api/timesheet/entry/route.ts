@@ -1,12 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
-import { startOfDay, endOfDay, getFase } from '@/lib/timesheet-helpers';
+import {
+    startOfDay,
+    endOfDay,
+    getFase,
+    getCostaRicaDate,
+} from '@/lib/timesheet-helpers';
 
 export const POST = withAuth(async (_req, _ctx, user) => {
   try {
-    const today = new Date();
+    const today = getCostaRicaDate();
     const existing = await (prisma as any).timesheetEntry.findFirst({
       where: { userId: user.userId, fecha: { gte: startOfDay(today), lte: endOfDay(today) }, horaSalida: null },
     });

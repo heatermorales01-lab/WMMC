@@ -1,4 +1,25 @@
-import { prisma } from '@/lib/prisma';
+﻿import { prisma } from '@/lib/prisma';
+
+const COSTA_RICA_TIMEZONE = "America/Costa_Rica";
+export function getCostaRicaDate(): Date {
+    return new Date(
+        new Date().toLocaleString("en-US", {
+            timeZone: "America/Costa_Rica",
+        })
+    );
+}
+
+export function getCostaRicaDay(): Date {
+
+    const cr = getCostaRicaDate();
+
+    return new Date(
+        cr.getFullYear(),
+        cr.getMonth(),
+        cr.getDate()
+    );
+
+}
 
 const DEFAULT_MINUTOS: Record<string, number> = { DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 };
 
@@ -7,11 +28,38 @@ export function diffMinutes(start: Date, end: Date): number {
 }
 
 export function startOfDay(date: Date): Date {
-  const d = new Date(date); d.setHours(0, 0, 0, 0); return d;
-}
 
+    const cr = new Date(
+        date.toLocaleString("en-US", {
+            timeZone: COSTA_RICA_TIMEZONE,
+        })
+    );
+
+    return new Date(
+        cr.getFullYear(),
+        cr.getMonth(),
+        cr.getDate()
+    );
+
+}
 export function endOfDay(date: Date): Date {
-  const d = new Date(date); d.setHours(23, 59, 59, 999); return d;
+
+    const cr = new Date(
+        date.toLocaleString("en-US", {
+            timeZone: COSTA_RICA_TIMEZONE,
+        })
+    );
+
+    return new Date(
+        cr.getFullYear(),
+        cr.getMonth(),
+        cr.getDate(),
+        23,
+        59,
+        59,
+        999
+    );
+
 }
 
 export function startOfWeek(date: Date): Date {

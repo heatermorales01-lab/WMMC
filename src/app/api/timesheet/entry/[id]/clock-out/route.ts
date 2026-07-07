@@ -1,8 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
-import { getFase, calcularHorasPagas, getMinutosPermitidos } from '@/lib/timesheet-helpers';
+import {
+    getFase,
+    calcularHorasPagas,
+    getMinutosPermitidos,
+    getCostaRicaDate,
+} from '@/lib/timesheet-helpers';
 
 export const PATCH = withAuth(async (req, { params }, user) => {
   try {
@@ -12,7 +17,7 @@ export const PATCH = withAuth(async (req, { params }, user) => {
     if (entry.userId !== user.userId && user.roleName !== 'ADMINISTRADOR') throw new AppError('Sin permiso', 403);
     if (entry.horaSalida) throw new AppError('La salida ya fue registrada', 409);
     if (getFase(entry) !== 'TRABAJANDO') throw new AppError('Hay un descanso en curso. Finalizalo primero.', 409);
-    const now = new Date();
+    const now = getCostaRicaDate();
     const minutosPermitidos = await getMinutosPermitidos();
     const { horas, minutosExcedentes } = calcularHorasPagas({ ...entry, horaSalida: now }, minutosPermitidos);
     const updated = await (prisma as any).timesheetEntry.update({

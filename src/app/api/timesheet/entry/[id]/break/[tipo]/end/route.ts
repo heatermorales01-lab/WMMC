@@ -1,8 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
-import { getFase, BREAK_FIELDS, diffMinutes, getMinutosPermitidos } from '@/lib/timesheet-helpers';
+import {
+    getFase,
+    BREAK_FIELDS,
+    diffMinutes,
+    getMinutosPermitidos,
+    getCostaRicaDate,
+} from '@/lib/timesheet-helpers';
 
 export const PATCH = withAuth(async (_req, { params }, user) => {
   try {
@@ -13,7 +19,7 @@ export const PATCH = withAuth(async (_req, { params }, user) => {
     if (entry.userId !== user.userId && user.roleName !== 'ADMINISTRADOR') throw new AppError('Sin permiso', 403);
     if (!entry[fields.start]) throw new AppError(`${fields.label} no había sido iniciado`, 409);
     if (entry[fields.end]) throw new AppError(`${fields.label} ya fue finalizado`, 409);
-    const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.end]: new Date() } });
+      const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.end]: getCostaRicaDate() } });
     const minutosPermitidos = await getMinutosPermitidos();
     const dur = Math.round(diffMinutes(new Date(updated[fields.start]), new Date(updated[fields.end])));
     const perm = minutosPermitidos[params.tipo.toUpperCase()] ?? 0;
