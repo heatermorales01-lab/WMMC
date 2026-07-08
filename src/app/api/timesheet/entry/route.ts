@@ -6,25 +6,25 @@ import {
     startOfDay,
     endOfDay,
     getFase,
-    getCostaRicaDate,
+    now,
 } from '@/lib/timesheet-helpers';
 
 export const POST = withAuth(async (_req, _ctx, user) => {
     try {
 
-        const now = getCostaRicaDate();
+        const current = now();
 
         console.log("====================================");
         console.log("Hora servidor:", new Date());
-        console.log("Hora Costa Rica:", now);
-        console.log("ISO:", now.toISOString());
-        console.log("Locale CR:", now.toLocaleString("es-CR"));
-        console.log("Inicio día:", startOfDay(now).toISOString());
-        console.log("Fin día:", endOfDay(now).toISOString());
+        console.log("Hora Costa Rica:", current);
+        console.log("ISO:", current.toISOString());
+        console.log("Locale CR:", current.toLocaleString("es-CR"));
+        console.log("Inicio día:", startOfDay(current).toISOString());
+        console.log("Fin día:", endOfDay(current).toISOString());
         console.log("====================================");
 
-        const todayStart = startOfDay(now);
-        const todayEnd = endOfDay(now);
+        const todayStart = startOfDay(current);
+        const todayEnd = endOfDay(current);
 
         const existing = await (prisma as any).timesheetEntry.findFirst({
             where: {
@@ -45,7 +45,7 @@ export const POST = withAuth(async (_req, _ctx, user) => {
             data: {
                 userId: user.userId,
                 fecha: todayStart,
-                horaEntrada: now,
+                horaEntrada: current,
             },
         });
         console.log("Registro guardado:");

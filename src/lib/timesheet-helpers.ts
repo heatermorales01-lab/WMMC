@@ -1,25 +1,35 @@
 ﻿import { prisma } from '@/lib/prisma';
 
-const COSTA_RICA_TIMEZONE = "America/Costa_Rica";
-export function getCostaRicaDate(): Date {
-    return new Date(
-        new Date().toLocaleString("en-US", {
-            timeZone: "America/Costa_Rica",
-        })
-    );
+const TIME_ZONE = "America/Costa_Rica";
+
+/**
+ * Devuelve la fecha actual del servidor (UTC).
+ * Siempre es la que se debe guardar en la base de datos.
+ */
+export function now(): Date {
+    return new Date();
 }
 
-export function getCostaRicaDay(): Date {
+/**
+ * Obtiene únicamente el año, mes y día en horario de Costa Rica.
+ */
+function getCRParts(date: Date) {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
 
-    const cr = getCostaRicaDate();
+    const parts = formatter.formatToParts(date);
 
-    return new Date(
-        cr.getFullYear(),
-        cr.getMonth(),
-        cr.getDate()
-    );
-
+    return {
+        year: Number(parts.find(p => p.type === "year")!.value),
+        month: Number(parts.find(p => p.type === "month")!.value),
+        day: Number(parts.find(p => p.type === "day")!.value),
+    };
 }
+
 
 const DEFAULT_MINUTOS: Record<string, number> = { DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 };
 
@@ -28,19 +38,19 @@ export function diffMinutes(start: Date, end: Date): number {
 }
 
 export function startOfDay(date: Date): Date {
-    const d = new Date(date);
 
-    d.setHours(0, 0, 0, 0);
+    const { year, month, day } = getCRParts(date);
 
-    return d;
+    return new Date(Date.UTC(year, month - 1, day, 6, 0, 0, 0));
+
 }
 
 export function endOfDay(date: Date): Date {
-    const d = new Date(date);
 
-    d.setHours(23, 59, 59, 999);
+    const { year, month, day } = getCRParts(date);
 
-    return d;
+    return new Date(Date.UTC(year, month - 1, day + 1, 5, 59, 59, 999));
+
 }
 export function startOfWeek(date: Date): Date {
 
