@@ -35,8 +35,12 @@ export const POST = withAuth(async (req, { params }, user) => {
 
         const filename = `${params.id}/${Date.now()}.${extension}`;
 
+        console.log("Bucket:", process.env.SUPABASE_STORAGE_BUCKET);
+        console.log("Filename:", filename);
+        console.log("Original:", file.name);
+
         const { error } = await supabaseAdmin.storage
-            .from("project-files")
+            .from(process.env.SUPABASE_STORAGE_BUCKET!)
             .upload(filename, Buffer.from(bytes), {
                 contentType: file.type,
                 upsert: false,
