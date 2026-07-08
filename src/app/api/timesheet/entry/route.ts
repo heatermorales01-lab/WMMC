@@ -14,6 +14,15 @@ export const POST = withAuth(async (_req, _ctx, user) => {
 
         const now = getCostaRicaDate();
 
+        console.log("====================================");
+        console.log("Hora servidor:", new Date());
+        console.log("Hora Costa Rica:", now);
+        console.log("ISO:", now.toISOString());
+        console.log("Locale CR:", now.toLocaleString("es-CR"));
+        console.log("Inicio día:", startOfDay(now).toISOString());
+        console.log("Fin día:", endOfDay(now).toISOString());
+        console.log("====================================");
+
         const todayStart = startOfDay(now);
         const todayEnd = endOfDay(now);
 
@@ -39,6 +48,9 @@ export const POST = withAuth(async (_req, _ctx, user) => {
                 horaEntrada: now,
             },
         });
+        console.log("Registro guardado:");
+        console.log(entry);
+
 
         return NextResponse.json(
             {

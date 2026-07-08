@@ -27,59 +27,45 @@ export function diffMinutes(start: Date, end: Date): number {
   return (end.getTime() - start.getTime()) / 60000;
 }
 
-const COSTA_RICA_OFFSET = -6; // UTC-6
-
-function toCostaRica(date: Date): Date {
-    return new Date(
-        date.getTime() + COSTA_RICA_OFFSET * 60 * 60 * 1000
-    );
-}
-
-function fromCostaRica(date: Date): Date {
-    return new Date(
-        date.getTime() - COSTA_RICA_OFFSET * 60 * 60 * 1000
-    );
-}
-
 export function startOfDay(date: Date): Date {
-    const cr = toCostaRica(date);
+    const d = new Date(date);
 
-    cr.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
 
-    return fromCostaRica(cr);
+    return d;
 }
 
 export function endOfDay(date: Date): Date {
-    const cr = toCostaRica(date);
+    const d = new Date(date);
 
-    cr.setHours(23, 59, 59, 999);
+    d.setHours(23, 59, 59, 999);
 
-    return fromCostaRica(cr);
+    return d;
 }
 export function startOfWeek(date: Date): Date {
 
-    const cr = toCostaRica(date);
+    const d = new Date(date);
 
-    const day = cr.getDay();
+    const day = d.getDay();
 
-    cr.setDate(
-        cr.getDate() + (day === 0 ? -6 : 1 - day)
+    d.setDate(
+        d.getDate() + (day === 0 ? -6 : 1 - day)
     );
 
-    cr.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
 
-    return fromCostaRica(cr);
+    return d;
 }
 
-export function endOfWeek(date: Date) {
+export function endOfWeek(date: Date): Date {
 
-    const start = toCostaRica(startOfWeek(date));
+    const end = startOfWeek(date);
 
-    start.setDate(start.getDate() + 6);
+    end.setDate(end.getDate() + 6);
 
-    start.setHours(23, 59, 59, 999);
+    end.setHours(23, 59, 59, 999);
 
-    return fromCostaRica(start);
+    return end;
 }
 
 export async function getMinutosPermitidos(): Promise<Record<string, number>> {
