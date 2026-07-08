@@ -12,8 +12,14 @@ function formatTime(iso?: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' });
 }
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('es-CR', { weekday: 'short', day: '2-digit', month: 'short' });
+function formatDate(dateString: string): string {
+    const [y, m, d] = dateString.slice(0, 10).split("-").map(Number);
+
+    return new Date(y, m - 1, d).toLocaleDateString("es-CR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+    });
 }
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
