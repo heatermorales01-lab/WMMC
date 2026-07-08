@@ -58,7 +58,6 @@ export const POST = withAuth(async (req, { params }, user) => {
                 nombreArchivo: file.name,
                 urlArchivo: data.publicUrl,
                 tipo,
-                subidoPor: user.userId,
             },
         });
 
