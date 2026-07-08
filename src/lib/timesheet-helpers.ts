@@ -27,53 +27,59 @@ export function diffMinutes(start: Date, end: Date): number {
   return (end.getTime() - start.getTime()) / 60000;
 }
 
+const COSTA_RICA_OFFSET = -6; // UTC-6
+
+function toCostaRica(date: Date): Date {
+    return new Date(
+        date.getTime() + COSTA_RICA_OFFSET * 60 * 60 * 1000
+    );
+}
+
+function fromCostaRica(date: Date): Date {
+    return new Date(
+        date.getTime() - COSTA_RICA_OFFSET * 60 * 60 * 1000
+    );
+}
+
 export function startOfDay(date: Date): Date {
+    const cr = toCostaRica(date);
 
-    const cr = new Date(
-        date.toLocaleString("en-US", {
-            timeZone: COSTA_RICA_TIMEZONE,
-        })
-    );
+    cr.setHours(0, 0, 0, 0);
 
-    return new Date(
-        cr.getFullYear(),
-        cr.getMonth(),
-        cr.getDate()
-    );
-
+    return fromCostaRica(cr);
 }
+
 export function endOfDay(date: Date): Date {
+    const cr = toCostaRica(date);
 
-    const cr = new Date(
-        date.toLocaleString("en-US", {
-            timeZone: COSTA_RICA_TIMEZONE,
-        })
-    );
+    cr.setHours(23, 59, 59, 999);
 
-    return new Date(
-        cr.getFullYear(),
-        cr.getMonth(),
-        cr.getDate(),
-        23,
-        59,
-        59,
-        999
-    );
-
+    return fromCostaRica(cr);
 }
-
 export function startOfWeek(date: Date): Date {
-  const d = startOfDay(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-  return d;
+
+    const cr = toCostaRica(date);
+
+    const day = cr.getDay();
+
+    cr.setDate(
+        cr.getDate() + (day === 0 ? -6 : 1 - day)
+    );
+
+    cr.setHours(0, 0, 0, 0);
+
+    return fromCostaRica(cr);
 }
 
-export function endOfWeek(date: Date): Date {
-  const start = startOfWeek(date);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  return endOfDay(end);
+export function endOfWeek(date: Date) {
+
+    const start = toCostaRica(startOfWeek(date));
+
+    start.setDate(start.getDate() + 6);
+
+    start.setHours(23, 59, 59, 999);
+
+    return fromCostaRica(start);
 }
 
 export async function getMinutosPermitidos(): Promise<Record<string, number>> {

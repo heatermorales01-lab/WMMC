@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import { Clock, LogIn, LogOut, Calendar, Users, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -50,12 +50,19 @@ function ClockWidget() {
   const [elapsedStr, setElapsedStr] = useState('');
   const [breakElapsedStr, setBreakElapsedStr] = useState('');
 
-  const load = () => {
-    timesheetApi.today().then((res: any) => {
-      setEntry(res.data);
-      if (res.minutosPermitidos) setMinutosPermitidos(res.minutosPermitidos);
-    }).finally(() => setLoading(false));
-  };
+    const load = () => {
+        timesheetApi.today().then((res: any) => {
+
+            console.log("ENTRY DEL BACKEND");
+            console.log(res.data);
+
+            setEntry(res.data);
+
+            if (res.minutosPermitidos)
+                setMinutosPermitidos(res.minutosPermitidos);
+
+        }).finally(() => setLoading(false));
+    };
 
   useEffect(() => { load(); }, []);
 
