@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import {
   Paperclip, Upload, Trash2, FileText, Image,
@@ -45,14 +45,14 @@ export default function ProjectFiles({ projectId }: { projectId: string }) {
   const [deleting, setDeleting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = async () => {
-    try {
-      const data = await filesApi.list(projectId);
-      setFiles(data.files);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const load = async () => {
+        try {
+            const data = await filesApi.list(projectId);
+            setFiles(data);
+        } finally {
+            setLoading(false);
+        }
+    };
 
   useEffect(() => { load(); }, [projectId]);
 
@@ -88,10 +88,9 @@ export default function ProjectFiles({ projectId }: { projectId: string }) {
     }
   };
 
-  const openFile = (url: string) => {
-    const base = '/api'?.replace('/api', '') || 'http://localhost:3001';
-    window.open(`${base}${url}`, '_blank');
-  };
+    const openFile = (url: string) => {
+        window.open(url, "_blank");
+    };
 
   if (loading) return (
     <div className="flex justify-center py-8"><Spinner /></div>
