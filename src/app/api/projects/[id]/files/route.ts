@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/lib/auth';
 import { handleError } from '@/lib/errors';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const GET = withAuth(async (_req, { params }) => {
   try {
@@ -15,34 +16,56 @@ export const GET = withAuth(async (_req, { params }) => {
 
 // File upload uses FormData — Next.js handles this natively
 export const POST = withAuth(async (req, { params }, user) => {
-  try {
-    const formData = await req.formData();
-    const file = formData.get('archivo') as File | null;
-    const tipo = formData.get('tipo') as string || 'OTRO';
+    try {
+        const formData = await req.formData();
 
-    if (!file) return NextResponse.json({ ok: false, error: 'No se recibió archivo' }, { status: 400 });
+        const file = formData.get("archivo") as File | null;
+        const tipo = (formData.get("tipo") as string) || "OTRO";
 
-    // In production use Supabase Storage — for now save metadata only
-    // TODO: integrate Supabase Storage upload here
-    const bytes = await file.arrayBuffer();
-    const filename = `${Date.now()}-${file.name}`;
+        if (!file) {
+            return NextResponse.json(
+                { ok: false, error: "No se recibió archivo" },
+                { status: 400 }
+            );
+        }
 
-    // Write to /tmp for local dev (not persistent in serverless)
-    const { writeFile, mkdir } = await import('fs/promises');
-    const { join } = await import('path');
-    const uploadDir = join(process.cwd(), 'public', 'uploads');
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(join(uploadDir, filename), Buffer.from(bytes));
+        const bytes = await file.arrayBuffer();
 
-    const projectFile = await (prisma as any).projectFile.create({
-      data: {
-        projectId: params.id,
-        nombreArchivo: file.name,
-        urlArchivo: `/uploads/${filename}`,
-        tipo,
-        subidoPor: user.userId,
-      },
-    });
-    return NextResponse.json({ ok: true, data: projectFile }, { status: 201 });
-  } catch (e) { return handleError(e); }
+        const extension = file.name.split(".").pop();
+
+        const filename = `${params.id}/${Date.now()}.${extension}`;
+
+        const { error } = await supabaseAdmin.storage
+            .from("project-files")
+            .upload(filename, Buffer.from(bytes), {
+                contentType: file.type,
+                upsert: false,
+            });
+
+        if (error) throw error;
+
+        const { data } = supabaseAdmin.storage
+            .from("project-files")
+            .getPublicUrl(filename);
+
+        const projectFile = await (prisma as any).projectFile.create({
+            data: {
+                projectId: params.id,
+                nombreArchivo: file.name,
+                urlArchivo: data.publicUrl,
+                tipo,
+                subidoPor: user.userId,
+            },
+        });
+
+        return NextResponse.json(
+            {
+                ok: true,
+                data: projectFile,
+            },
+            { status: 201 }
+        );
+    } catch (e) {
+        return handleError(e);
+    }
 });
