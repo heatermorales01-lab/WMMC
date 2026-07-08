@@ -6,10 +6,12 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const GET = withAuth(async (_req, { params }) => {
   try {
-    const files = await (prisma as any).projectFile.findMany({
-      where: { projectId: params.id },
-      orderBy: { createdAt: 'desc' as const },
-    });
+      const files = await (prisma as any).projectFile.findMany({
+          where: { projectId: params.id },
+          orderBy: {
+              fechaSubida: 'desc',
+          },
+      });
     return NextResponse.json({ ok: true, data: files });
   } catch (e) { return handleError(e); }
 });
