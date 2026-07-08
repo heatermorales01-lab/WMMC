@@ -7,7 +7,7 @@ import {
     BREAK_FIELDS,
     diffMinutes,
     getMinutosPermitidos,
-    getCostaRicaDate,
+    now,
 } from '@/lib/timesheet-helpers';
 
 export const PATCH = withAuth(async (_req, { params }, user) => {
@@ -19,7 +19,7 @@ export const PATCH = withAuth(async (_req, { params }, user) => {
     if (entry.userId !== user.userId && user.roleName !== 'ADMINISTRADOR') throw new AppError('Sin permiso', 403);
     if (!entry[fields.start]) throw new AppError(`${fields.label} no había sido iniciado`, 409);
     if (entry[fields.end]) throw new AppError(`${fields.label} ya fue finalizado`, 409);
-      const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.end]: getCostaRicaDate() } });
+      const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.end]: now() } });
     const minutosPermitidos = await getMinutosPermitidos();
     const dur = Math.round(diffMinutes(new Date(updated[fields.start]), new Date(updated[fields.end])));
     const perm = minutosPermitidos[params.tipo.toUpperCase()] ?? 0;

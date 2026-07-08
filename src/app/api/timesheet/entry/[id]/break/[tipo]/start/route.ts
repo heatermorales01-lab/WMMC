@@ -5,7 +5,7 @@ import { handleError, AppError } from '@/lib/errors';
 import {
     getFase,
     BREAK_FIELDS,
-    getCostaRicaDate,
+    now,
 } from '@/lib/timesheet-helpers';
 
 export const PATCH = withAuth(async (_req, { params }, user) => {
@@ -18,7 +18,7 @@ export const PATCH = withAuth(async (_req, { params }, user) => {
     if (entry.horaSalida) throw new AppError('La jornada ya fue cerrada', 409);
     if (entry[fields.start]) throw new AppError(`${fields.label} ya fue iniciado`, 409);
     if (getFase(entry) !== 'TRABAJANDO') throw new AppError('Ya hay un descanso en curso', 409);
-      const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.start]: getCostaRicaDate() } });
+      const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { [fields.start]: now() } });
     return NextResponse.json({ ok: true, data: { ...updated, fase: getFase(updated) }, message: `${fields.label} iniciado` });
   } catch (e) { return handleError(e); }
 });

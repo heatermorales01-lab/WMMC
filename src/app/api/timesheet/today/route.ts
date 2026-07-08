@@ -7,12 +7,12 @@ import {
     endOfDay,
     getFase,
     getMinutosPermitidos,
-    getCostaRicaDate,
+    now,
 } from '@/lib/timesheet-helpers';
 
 export const GET = withAuth(async (_req, _ctx, user) => {
   try {
-    const today = getCostaRicaDate();
+    const today = now();
     const entry = await (prisma as any).timesheetEntry.findFirst({
       where: { userId: user.userId, fecha: { gte: startOfDay(today), lte: endOfDay(today) } },
       orderBy: { horaEntrada: 'desc' },
