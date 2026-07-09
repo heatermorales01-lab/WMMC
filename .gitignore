@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.production
+public/uploads/
+*.log
+.DS_Store
+Thumbs.db
+.vs/
+bin/
+obj/

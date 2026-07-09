@@ -1,5 +1,6 @@
 // This is your Prisma schema file
 // WM Muebles Contemporáneos ERP
+//Prueba
 
 generator client {
   provider = "prisma-client-js"
@@ -265,6 +266,7 @@ model QuotationService {
   quotationId String   @map("quotation_id") @db.Uuid
   serviceId   String   @map("service_id") @db.Uuid
   cantidad    Int      @default(1)
+  montoManual Decimal? @map("monto_manual") @db.Decimal(14,2)
   subtotal    Decimal  @db.Decimal(14, 2)
   createdAt   DateTime @default(now()) @map("created_at")
 
