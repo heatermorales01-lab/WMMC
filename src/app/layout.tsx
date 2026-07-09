@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     description: 'Sistema de gestión interna',
     icons: {
         icon: '/icon.png',
+        apple: '/icon.png',
     },
 };
 
