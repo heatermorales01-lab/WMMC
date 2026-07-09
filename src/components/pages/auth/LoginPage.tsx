@@ -99,7 +99,7 @@ export default function LoginPage() {
                   <img
                       src="/logoLogin.png"
                       alt="WM Muebles"
-                      className="h-20 drop-shadow-xl"
+                      className="h-32 md:h-36 w-auto drop-shadow-xl"
                   />
               </div>
 
