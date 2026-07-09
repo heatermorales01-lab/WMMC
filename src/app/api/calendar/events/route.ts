@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
@@ -14,16 +14,16 @@ export const GET = withAuth(async (_req, _ctx, user) => {
       select: { id: true, nombreProyecto: true, estado: true, fechaInstalacionTentativa: true, client: { select: { nombre: true } } },
     });
 
-    let schedules: any[] = [];
-    if (isAdmin) {
-      schedules = await (prisma as any).paymentSchedule.findMany({
-        where: { fechaEstimada: { not: null }, pagado: false },
-        select: {
-          id: true, descripcion: true, porcentaje: true, fechaEstimada: true,
-          project: { select: { id: true, nombreProyecto: true, client: { select: { nombre: true } }, sale: { select: { total: true } } } },
-        },
-      });
-    }
+    //let schedules: any[] = [];
+    //if (isAdmin) {
+    //  schedules = await (prisma as any).paymentSchedule.findMany({
+    //    where: { fechaEstimada: { not: null }, pagado: false },
+    //    select: {
+    //      id: true, descripcion: true, porcentaje: true, fechaEstimada: true,
+    //      project: { select: { id: true, nombreProyecto: true, client: { select: { nombre: true } }, sale: { select: { total: true } } } },
+    //    },
+    //  });
+    //}
 
     const customEvents = await (prisma as any).calendarEvent.findMany({
       where: isAdmin ? {} : { createdById: user.userId },
@@ -36,14 +36,14 @@ export const GET = withAuth(async (_req, _ctx, user) => {
         id: `install-${p.id}`, type: 'INSTALACION', title: `Instalación: ${p.nombreProyecto}`,
         date: p.fechaInstalacionTentativa, projectId: p.id, clientName: p.client?.nombre, estado: p.estado, editable: false,
       })),
-      ...schedules.map((s: any) => {
-        const monto = s.project?.sale?.total && s.porcentaje ? (Number(s.project.sale.total) * Number(s.porcentaje)) / 100 : null;
-        return {
-          id: `payment-${s.id}`, type: 'COBRO', title: `Cobro (${s.descripcion || 'Cuota'}): ${s.project?.nombreProyecto}`,
-          date: s.fechaEstimada, projectId: s.project?.id, clientName: s.project?.client?.nombre,
-          porcentaje: s.porcentaje ? Number(s.porcentaje) : null, monto, editable: false,
-        };
-      }),
+      //...schedules.map((s: any) => {
+      //  const monto = s.project?.sale?.total && s.porcentaje ? (Number(s.project.sale.total) * Number(s.porcentaje)) / 100 : null;
+      //  return {
+      //    id: `payment-${s.id}`, type: 'COBRO', title: `Cobro (${s.descripcion || 'Cuota'}): ${s.project?.nombreProyecto}`,
+      //    date: s.fechaEstimada, projectId: s.project?.id, clientName: s.project?.client?.nombre,
+      //    porcentaje: s.porcentaje ? Number(s.porcentaje) : null, monto, editable: false,
+      //  };
+      //}),
       ...customEvents.map((e: any) => ({
         id: `custom-${e.id}`, dbId: e.id, type: e.tipo, title: e.titulo, description: e.descripcion,
         date: e.fecha, projectId: e.projectId, projectName: e.project?.nombreProyecto,
