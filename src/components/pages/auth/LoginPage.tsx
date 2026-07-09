@@ -51,7 +51,7 @@ export default function LoginPage() {
     relative
     min-h-screen
     flex
-    items-center
+    items-center pt-10
     justify-center
     lg:justify-end lg:pr-24 xl:pr-32
     px-5
@@ -95,7 +95,7 @@ export default function LoginPage() {
           >
 
               {/* Logo solo en tablet y celular */}
-              <div className="flex justify-center mb-6 lg:hidden">
+              <div className="flex justify-center mb-0 lg:hidden">
                   <img
                       src="/logoLogin.png"
                       alt="WM Muebles"
