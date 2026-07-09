@@ -46,14 +46,65 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center lg:justify-end p-4 sm:p-6 lg:pr-20 bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: 'url(/fondo.jpeg)' }}
-    >
+      <div
+          className="
+    relative
+    min-h-screen
+    flex
+    items-center
+    justify-center
+    lg:justify-end
+    px-5
+    md:px-10
+    lg:px-20
+    overflow-hidden
+    bg-cover
+    bg-center
+    bg-no-repeat
+  "
+          style={{
+              backgroundImage: 'url(/fondo.jpeg)',
+          }}
+      >
       {/* Overlay para legibilidad en móvil, donde el form queda centrado sobre la imagen */}
-      <div className="absolute inset-0 bg-black/30 lg:bg-transparent lg:bg-gradient-to-l lg:from-black/10 lg:via-transparent lg:to-transparent" />
+          <div
+              className="
+        absolute
+        inset-0
+        bg-gradient-to-br
+        from-black/45
+        via-black/20
+        to-transparent
+    "
+          />
 
-      <div className="relative w-full max-w-sm sm:max-w-md">
+          <div className="flex justify-center lg:justify-start mb-8">
+
+              <img
+                  src="/logo.png"
+                  alt="WM Muebles"
+                  className="
+            h-20
+            md:h-24
+            lg:h-28
+            drop-shadow-xl
+        "
+              />
+
+          </div>
+
+          <div
+              className="
+        backdrop-blur-xl
+        bg-white/88
+        border
+        border-white/40
+        rounded-3xl
+        shadow-2xl
+        p-8
+        md:p-10
+    "
+          >
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
           <h2 className="text-lg sm:text-xl font-display font-bold text-slate-900 mb-1">Iniciar sesión</h2>
