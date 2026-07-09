@@ -9,7 +9,10 @@ const notoSans = Noto_Sans({ subsets: ['latin'], variable: '--font-noto' });
 
 export const metadata: Metadata = {
   title: 'WM Muebles Contemporáneos — ERP',
-  description: 'Sistema de gestión interna',
+    description: 'Sistema de gestión interna',
+    icons: {
+        icon: '/icon.png',
+    },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
