@@ -97,13 +97,13 @@ export default function LoginPage() {
               {/* Logo solo en tablet y celular */}
               <div className="flex justify-center mb-6 lg:hidden">
                   <img
-                      src="/logo.png"
+                      src="/logoLogin.png"
                       alt="WM Muebles"
                       className="h-20 drop-shadow-xl"
                   />
               </div>
 
-              <h2 className="text-2xl font-display font-bold text-slate-900">
+              <h2 className="text-2xl font-display font-bold text-wood-500">
                   Iniciar sesión
               </h2>
 
@@ -114,7 +114,7 @@ export default function LoginPage() {
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
 
                   <div>
-                      <label className="label">Correo electrónico</label>
+                      <label className="label text-white">Correo electrónico</label>
                       <input
                           type="email"
                           className={`input ${errors.correo ? 'input-error' : ''}`}
@@ -125,7 +125,7 @@ export default function LoginPage() {
                   </div>
 
                   <div>
-                      <label className="label">Contraseña</label>
+                      <label className="label text-white">Contraseña</label>
                       <div className="relative">
                           <input
                               type={showPass ? 'text' : 'password'}
