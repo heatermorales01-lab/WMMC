@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -7,8 +7,8 @@ import {
   Package, Settings, LogOut, ChevronRight, Bell, Menu, X, Calendar, Clock,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
+import AuthGuard from '@/components/AuthGuard';
 import toast from 'react-hot-toast';
-
 
 
 const NAV = [
@@ -43,7 +43,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const closeMobile = () => setMobileOpen(false);
 
-  return (
+    return (
+    <AuthGuard>
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Overlay móvil */}
       {mobileOpen && (
@@ -162,6 +163,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-    </div>
+            </div>
+     </AuthGuard>
   );
 }

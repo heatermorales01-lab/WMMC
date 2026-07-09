@@ -1,6 +1,5 @@
-'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+﻿'use client';
+import { useEffect, useState } from 'react'; import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,8 +18,14 @@ type Form = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setAuth } = useAuthStore();
-  const [showPass, setShowPass] = useState(false);
+  const { user, setAuth } = useAuthStore();
+    const [showPass, setShowPass] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            router.replace('/');
+        }
+    }, [user, router]);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Form>({
     resolver: zodResolver(schema),
@@ -29,9 +34,12 @@ export default function LoginPage() {
   const onSubmit = async (data: Form) => {
     try {
       const result = await authApi.login(data.correo, data.password);
-      setAuth(result.user, result.token);
+        setAuth(result.user, result.token);
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
       toast.success(`Bienvenido, ${result.user.nombre}`);
-      router.push('/dashboard');
+        router.replace('/');
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Credenciales incorrectas');
     }

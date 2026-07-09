@@ -1,4 +1,5 @@
 ﻿import axios from 'axios';
+import { useAuthStore } from '@/store/auth.store';
 
 // En Next.js el frontend llama a /api (mismo dominio) — no se necesita URL separada del backend
 const api = axios.create({ baseURL: '/api' });
@@ -15,7 +16,8 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('wm_token');
+        localStorage.removeItem('wm_token');
+        useAuthStore.getState().logout();
       window.location.href = '/login';
     }
     return Promise.reject(err);
