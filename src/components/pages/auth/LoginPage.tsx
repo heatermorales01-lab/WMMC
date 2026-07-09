@@ -53,13 +53,14 @@ export default function LoginPage() {
     flex
     items-center
     justify-center
-    lg:justify-end
+    lg:justify-end lg:pr-24 xl:pr-32
     px-5
     md:px-10
     lg:px-20
     overflow-hidden
     bg-cover
-    bg-center
+    lg:bg-center
+    bg-left
     bg-no-repeat
   "
           style={{
@@ -77,81 +78,85 @@ export default function LoginPage() {
         to-transparent
     "
           />
-
-          <div className="flex justify-center lg:justify-start mb-8">
-
-              <img
-                  src="/logo.png"
-                  alt="WM Muebles"
-                  className="
-            h-20
-            md:h-24
-            lg:h-28
-            drop-shadow-xl
-        "
-              />
-
-          </div>
-
           <div
               className="
+        relative
+        w-full
+        max-w-lg
         backdrop-blur-xl
         bg-white/88
         border
         border-white/40
         rounded-3xl
         shadow-2xl
-        p-8
+        p-10
         md:p-10
     "
           >
-        {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
-          <h2 className="text-lg sm:text-xl font-display font-bold text-slate-900 mb-1">Iniciar sesión</h2>
-          <p className="text-xs sm:text-sm text-slate-400 mb-5 sm:mb-6">WM Muebles Contemporáneos — Sistema ERP</p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="label">Correo electrónico</label>
-              <input
-                type="email"
-                className={`input ${errors.correo ? 'input-error' : ''}`}
-                placeholder="admin@wmmuebles.com"
-                {...register('correo')}
-              />
-              {errors.correo && <p className="field-error">{errors.correo.message}</p>}
-            </div>
-
-            <div>
-              <label className="label">Contraseña</label>
-              <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  className={`input pr-10 ${errors.password ? 'input-error' : ''}`}
-                  placeholder="••••••••"
-                  {...register('password')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+              {/* Logo solo en tablet y celular */}
+              <div className="flex justify-center mb-6 lg:hidden">
+                  <img
+                      src="/logo.png"
+                      alt="WM Muebles"
+                      className="h-20 drop-shadow-xl"
+                  />
               </div>
-              {errors.password && <p className="field-error">{errors.password.message}</p>}
-            </div>
 
-            <button type="submit" className="btn-primary w-full justify-center py-2.5 mt-2" disabled={isSubmitting}>
-              {isSubmitting ? <Spinner size="sm" /> : 'Ingresar'}
-            </button>
-          </form>
-        </div>
+              <h2 className="text-2xl font-display font-bold text-slate-900">
+                  Iniciar sesión
+              </h2>
 
-        <p className="relative text-center text-white/80 lg:text-wood-200 text-xs mt-5 drop-shadow">
-          © {new Date().getFullYear()} WM Muebles Contemporáneos
-        </p>
-      </div>
+              <p className="text-sm text-slate-500 mt-1 mb-8">
+                  WM Muebles Contemporáneos — Sistema ERP
+              </p>
+
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+
+                  <div>
+                      <label className="label">Correo electrónico</label>
+                      <input
+                          type="email"
+                          className={`input ${errors.correo ? 'input-error' : ''}`}
+                          placeholder="admin@wmmuebles.com"
+                          {...register('correo')}
+                      />
+                      {errors.correo && <p className="field-error">{errors.correo.message}</p>}
+                  </div>
+
+                  <div>
+                      <label className="label">Contraseña</label>
+                      <div className="relative">
+                          <input
+                              type={showPass ? 'text' : 'password'}
+                              className={`input pr-10 ${errors.password ? 'input-error' : ''}`}
+                              placeholder="••••••••"
+                              {...register('password')}
+                          />
+                          <button
+                              type="button"
+                              onClick={() => setShowPass(!showPass)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                              {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                      </div>
+                      {errors.password && <p className="field-error">{errors.password.message}</p>}
+                  </div>
+
+                  <button type="submit" className="btn-primary w-full justify-center py-2.5 mt-2" disabled={isSubmitting}>
+                      {isSubmitting ? <Spinner size="sm" /> : 'Ingresar'}
+                  </button>
+
+
+              </form>
+
+              <p className="text-center text-xs text-slate-500 mt-8">
+                  © {new Date().getFullYear()} WM Muebles Contemporáneos
+              </p>
+
+          </div>
+      
     </div>
   );
 }
