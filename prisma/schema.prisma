@@ -1,7 +1,4 @@
-// This is your Prisma schema file
-// WM Muebles Contemporáneos ERP
-//Prueba
-
+﻿
 generator client {
   provider = "prisma-client-js"
 }
@@ -471,20 +468,32 @@ model UserWageConfig {
 }
 
 // =====================================
+// AUDIENCIA DEL EVENTO
+// =====================================
+enum Audience {
+  TODOS
+  SOLO_ADMIN
+  EMPLEADOS
+  TRABAJADORES
+}
+
+// =====================================
 // EVENTOS PERSONALIZADOS DEL CALENDARIO
-// Visitas de medición, reuniones, visitas al taller, etc.
-// Cualquier usuario puede crear eventos; el admin puede ver todos.
 // =====================================
 model CalendarEvent {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   titulo      String   @db.VarChar(200)
   descripcion String?  @db.VarChar(500)
   fecha       DateTime @db.Date
-  tipo        String   @db.VarChar(50)  // MEDICION | TALLER | REUNION | OTRO
+  tipo        String   @db.VarChar(50) // MEDICION | TALLER | REUNION | OTRO
+
   projectId   String?  @map("project_id") @db.Uuid
   createdById String   @map("created_by_id") @db.Uuid
+
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  audiencia Audience @default(TODOS)
 
   project   Project? @relation(fields: [projectId], references: [id])
   createdBy User     @relation(fields: [createdById], references: [id])
