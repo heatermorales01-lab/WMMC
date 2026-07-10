@@ -4,15 +4,65 @@ import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
 
 const TIPOS_EVENTO = ['MEDICION', 'TALLER', 'REUNION', 'OTRO'];
+const AUDIENCIAS = [
+    'TODOS',
+    'ADMIN',
+    'ADMIN_EMPLEADOS',
+    'ADMIN_TRABAJADORES',
+];
 
 export const GET = withAuth(async (_req, _ctx, user) => {
   try {
-    const isAdmin = user.roleName === 'ADMINISTRADOR';
+      const isAdmin = user.roleName === 'ADMINISTRADOR';
+      const isEmpleado = user.roleName === 'EMPLEADO';
+      const isTrabajador = user.roleName === 'TRABAJADOR';
 
     const projects = await prisma.project.findMany({
       where: { fechaInstalacionTentativa: { not: null }, estado: { notIn: ['FINALIZADO', 'CANCELADO'] } },
       select: { id: true, nombreProyecto: true, estado: true, fechaInstalacionTentativa: true, client: { select: { nombre: true } } },
     });
+
+      let whereEvents: any = {};
+
+      if (isEmpleado) {
+          whereEvents = {
+              OR: [
+                  { audiencia: 'TODOS' },
+                  { audiencia: 'ADMIN_EMPLEADOS' },
+                  { createdById: user.userId },
+              ],
+          };
+      }
+
+      if (isTrabajador) {
+          whereEvents = {
+              OR: [
+                  { audiencia: 'TODOS' },
+                  { audiencia: 'ADMIN_TRABAJADORES' },
+                  { createdById: user.userId },
+              ],
+          };
+      }
+
+      const customEvents = await (prisma as any).calendarEvent.findMany({
+          where: whereEvents,
+          include: {
+              project: {
+                  select: {
+                      id: true,
+                      nombreProyecto: true,
+                  },
+              },
+              createdBy: {
+                  select: {
+                      nombre: true,
+                  },
+              },
+          },
+          orderBy: {
+              fecha: 'asc',
+          },
+      });
 
     //let schedules: any[] = [];
     //if (isAdmin) {
@@ -25,11 +75,6 @@ export const GET = withAuth(async (_req, _ctx, user) => {
     //  });
     //}
 
-    const customEvents = await (prisma as any).calendarEvent.findMany({
-      where: isAdmin ? {} : { createdById: user.userId },
-      include: { project: { select: { id: true, nombreProyecto: true } }, createdBy: { select: { nombre: true } } },
-      orderBy: { fecha: 'asc' },
-    });
 
     const events = [
       ...projects.map((p: any) => ({
@@ -57,13 +102,31 @@ export const GET = withAuth(async (_req, _ctx, user) => {
 
 export const POST = withAuth(async (req, _ctx, user) => {
   try {
-    const { titulo, descripcion, fecha, tipo, projectId } = await req.json();
+      const {
+          titulo,
+          descripcion,
+          fecha,
+          tipo,
+          projectId,
+          audiencia,
+      } = await req.json();
+
     if (!titulo?.trim()) throw new AppError('El título es requerido', 400);
     if (!fecha) throw new AppError('La fecha es requerida', 400);
-    if (!TIPOS_EVENTO.includes(tipo)) throw new AppError('Tipo inválido', 400);
+      if (!TIPOS_EVENTO.includes(tipo)) throw new AppError('Tipo inválido', 400);
+      if (!AUDIENCIAS.includes(audiencia))
+          throw new AppError('Audiencia inválida', 400);
 
     const event = await (prisma as any).calendarEvent.create({
-      data: { titulo: titulo.trim(), descripcion: descripcion?.trim() || null, fecha: new Date(fecha), tipo, projectId: projectId || null, createdById: user.userId },
+        data: {
+            titulo: titulo.trim(),
+            descripcion: descripcion?.trim() || null,
+            fecha: new Date(fecha),
+            tipo,
+            audiencia,
+            projectId: projectId || null,
+            createdById: user.userId,
+        },
       include: { project: { select: { id: true, nombreProyecto: true } }, createdBy: { select: { nombre: true } } },
     });
     return NextResponse.json({ ok: true, data: event }, { status: 201 });

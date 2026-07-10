@@ -247,9 +247,13 @@ export const filesApi = {
 // ─── CALENDARIO ─────────────────────────────────────────
 export const calendarApi = {
   events: () => api.get('/calendar/events').then((r) => r.data.data),
-  createEvent: (data: { titulo: string; descripcion?: string; fecha: string; tipo: string; projectId?: string }) =>
+    createEvent: (data: {
+        titulo: string; descripcion?: string; fecha: string; tipo: string; projectId?: string;
+        audiencia: string; }) =>
     api.post('/calendar/events', data).then((r) => r.data.data),
-  updateEvent: (id: string, data: Partial<{ titulo: string; descripcion: string; fecha: string; tipo: string; projectId: string }>) =>
+    updateEvent: (id: string, data: Partial<{
+        titulo: string; descripcion: string; fecha: string; tipo: string; projectId: string;
+        audiencia: string; }>) =>
     api.put(`/calendar/events/${id}`, data).then((r) => r.data.data),
   deleteEvent: (id: string) =>
     api.delete(`/calendar/events/${id}`).then((r) => r.data),
