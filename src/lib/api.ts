@@ -50,7 +50,7 @@ export const projectsApi = {
   updateStage: (id: string, stageId: string, data: any) =>
     api.patch(`/projects/${id}/stages/${stageId}`, data).then((r) => r.data.data),
   delete: (id: string) =>
-    api.delete(`/projects/${id}`).then((r) => r.data),
+        api.delete(`/projects/${id}`).then((r) => r.data),
 };
 
 // ─── COTIZACIONES ──────────────────────────────────────
