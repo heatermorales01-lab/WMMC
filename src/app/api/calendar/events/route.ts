@@ -22,30 +22,6 @@ export const GET = withAuth(async (_req, _ctx, user) => {
       select: { id: true, nombreProyecto: true, estado: true, fechaInstalacionTentativa: true, client: { select: { nombre: true } } },
     });
 
-      let whereEvents: any = {};
-
-      if (isEmpleado) {
-          whereEvents = {
-              OR: [
-                  { audiencia: 'TODOS' },
-                  { audiencia: 'ADMIN_EMPLEADOS' },
-                  { createdById: user.userId },
-              ],
-          };
-      }
-
-      if (isTrabajador) {
-          whereEvents = {
-              OR: [
-                  { audiencia: 'TODOS' },
-                  { audiencia: 'ADMIN_TRABAJADORES' },
-                  { createdById: user.userId },
-              ],
-          };
-      }
-
-
-
       const customEvents = await (prisma as any).calendarEvent.findMany({
           where: isAdmin
               ? {}
@@ -63,6 +39,24 @@ export const GET = withAuth(async (_req, _ctx, user) => {
                           : []),
                   ],
               },
+
+          include: {
+              project: {
+                  select: {
+                      id: true,
+                      nombreProyecto: true,
+                  },
+              },
+              createdBy: {
+                  select: {
+                      nombre: true,
+                  },
+              },
+          },
+
+          orderBy: {
+              fecha: 'asc',
+          },
       });
 
     //let schedules: any[] = [];
