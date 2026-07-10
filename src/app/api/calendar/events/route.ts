@@ -92,7 +92,11 @@ export const GET = withAuth(async (_req, _ctx, user) => {
     ];
 
     return NextResponse.json({ ok: true, data: events });
-  } catch (e) { return handleError(e); }
+  } catch (e) {
+      console.error("ERROR CALENDAR GET");
+      console.error(e);
+      return handleError(e);
+  }
 });
 
 export const POST = withAuth(async (req, _ctx, user) => {
