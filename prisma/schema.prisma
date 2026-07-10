@@ -1,4 +1,4 @@
-//This is your Prisma schema file,
+﻿﻿//This is your Prisma schema file,
 // WM Muebles Contemporáneos ERP
 //Prueba
 
@@ -470,12 +470,16 @@ model UserWageConfig {
   @@map("user_wage_configs")
 }
 
+// =====================================
+// AUDIENCIA DEL EVENTO
+// =====================================
 enum Audience {
   TODOS
-  ADMIN
-  ADMIN_EMPLEADOS
-  ADMIN_TRABAJADORES
+  SOLO_ADMIN
+  EMPLEADOS
+  TRABAJADORES
 }
+
 
 // =====================================
 // EVENTOS PERSONALIZADOS DEL CALENDARIO
@@ -488,11 +492,11 @@ model CalendarEvent {
   descripcion String?  @db.VarChar(500)
   fecha       DateTime @db.Date
   tipo        String   @db.VarChar(50)  // MEDICION | TALLER | REUNION | OTRO
+  audiencia Audience @default(TODOS)
   projectId   String?  @map("project_id") @db.Uuid
   createdById String   @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  audiencia Audience @default(TODOS)
 
   project   Project? @relation(fields: [projectId], references: [id])
   createdBy User     @relation(fields: [createdById], references: [id])
