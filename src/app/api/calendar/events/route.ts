@@ -44,24 +44,25 @@ export const GET = withAuth(async (_req, _ctx, user) => {
           };
       }
 
+
+
       const customEvents = await (prisma as any).calendarEvent.findMany({
-          where: whereEvents,
-          include: {
-              project: {
-                  select: {
-                      id: true,
-                      nombreProyecto: true,
-                  },
+          where: isAdmin
+              ? {}
+              : {
+                  OR: [
+                      { createdById: user.userId },
+                      { audiencia: 'TODOS' },
+
+                      ...(isEmpleado
+                          ? [{ audiencia: 'ADMIN_EMPLEADOS' }]
+                          : []),
+
+                      ...(isTrabajador
+                          ? [{ audiencia: 'ADMIN_TRABAJADORES' }]
+                          : []),
+                  ],
               },
-              createdBy: {
-                  select: {
-                      nombre: true,
-                  },
-              },
-          },
-          orderBy: {
-              fecha: 'asc',
-          },
       });
 
     //let schedules: any[] = [];
