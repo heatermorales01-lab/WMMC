@@ -13,9 +13,9 @@ const AUDIENCIAS = [
 
 export const GET = withAuth(async (_req, _ctx, user) => {
   try {
-      const isAdmin = user.roleName === 'ADMINISTRADOR';
-      const isEmpleado = user.roleName === 'EMPLEADO';
-      const isTrabajador = user.roleName === 'TRABAJADOR';
+      const isAdmin = user.roleName === 'ADMIN';
+      const isEmpleado = user.roleName === 'ADMIN_EMPLEADO';
+      const isTrabajador = user.roleName === 'ADMIN_TRABAJADORES';
 
     const projects = await prisma.project.findMany({
       where: { fechaInstalacionTentativa: { not: null }, estado: { notIn: ['FINALIZADO', 'CANCELADO'] } },

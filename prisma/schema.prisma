@@ -475,9 +475,9 @@ model UserWageConfig {
 // =====================================
 enum Audience {
   TODOS
-  SOLO_ADMIN
-  EMPLEADOS
-  TRABAJADORES
+  ADMIN
+  ADMIN_EMPLEADOS
+  ADMIN_TRABAJADORES
 }
 
 
