@@ -16,6 +16,12 @@ export const GET = withAuth(async (_req, _ctx, user) => {
       const isAdmin = user.roleName === 'ADMIN';
       const isEmpleado = user.roleName === 'ADMIN_EMPLEADO';
       const isTrabajador = user.roleName === 'ADMIN_TRABAJADORES';
+      console.log({
+          role: user.roleName,
+          isAdmin,
+          isEmpleado,
+          isTrabajador,
+      });
 
     const projects = await prisma.project.findMany({
       where: { fechaInstalacionTentativa: { not: null }, estado: { notIn: ['FINALIZADO', 'CANCELADO'] } },
@@ -39,6 +45,7 @@ export const GET = withAuth(async (_req, _ctx, user) => {
                           : []),
                   ],
               },
+
 
           include: {
               project: {
@@ -118,5 +125,5 @@ export const POST = withAuth(async (req, _ctx, user) => {
       include: { project: { select: { id: true, nombreProyecto: true } }, createdBy: { select: { nombre: true } } },
     });
     return NextResponse.json({ ok: true, data: event }, { status: 201 });
-  } catch (e) { return handleError(e); }
+    } catch (e) { return handleError(e); }
 });
