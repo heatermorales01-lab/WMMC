@@ -59,36 +59,25 @@ export const GET = withAuth(async (_req, _ctx, user) => {
           },
       });
 
-    //let schedules: any[] = [];
-    //if (isAdmin) {
-    //  schedules = await (prisma as any).paymentSchedule.findMany({
-    //    where: { fechaEstimada: { not: null }, pagado: false },
-    //    select: {
-    //      id: true, descripcion: true, porcentaje: true, fechaEstimada: true,
-    //      project: { select: { id: true, nombreProyecto: true, client: { select: { nombre: true } }, sale: { select: { total: true } } } },
-    //    },
-    //  });
-    //}
-
-
     const events = [
       ...projects.map((p: any) => ({
         id: `install-${p.id}`, type: 'INSTALACION', title: `Instalación: ${p.nombreProyecto}`,
         date: p.fechaInstalacionTentativa, projectId: p.id, clientName: p.client?.nombre, estado: p.estado, editable: false,
       })),
-      //...schedules.map((s: any) => {
-      //  const monto = s.project?.sale?.total && s.porcentaje ? (Number(s.project.sale.total) * Number(s.porcentaje)) / 100 : null;
-      //  return {
-      //    id: `payment-${s.id}`, type: 'COBRO', title: `Cobro (${s.descripcion || 'Cuota'}): ${s.project?.nombreProyecto}`,
-      //    date: s.fechaEstimada, projectId: s.project?.id, clientName: s.project?.client?.nombre,
-      //    porcentaje: s.porcentaje ? Number(s.porcentaje) : null, monto, editable: false,
-      //  };
-      //}),
-      ...customEvents.map((e: any) => ({
-        id: `custom-${e.id}`, dbId: e.id, type: e.tipo, title: e.titulo, description: e.descripcion,
-        date: e.fecha, projectId: e.projectId, projectName: e.project?.nombreProyecto,
-        createdBy: e.createdBy.nombre, editable: true,
-      })),
+
+        ...customEvents.map((e: any) => ({
+            id: `custom-${e.id}`,
+            dbId: e.id,
+            type: e.tipo,
+            title: e.titulo,
+            description: e.descripcion,
+            date: e.fecha,
+            projectId: e.projectId,
+            projectName: e.project?.nombreProyecto,
+            createdBy: e.createdBy.nombre,
+            audiencia: e.audiencia,
+            editable: e.createdById === user.userId || isAdmin,
+        })),
     ];
 
     return NextResponse.json({ ok: true, data: events });
