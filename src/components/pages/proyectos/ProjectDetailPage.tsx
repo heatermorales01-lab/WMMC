@@ -1,11 +1,11 @@
-'use client';
+﻿'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft, Plus, FileText, CreditCard, Package,
   CheckCircle2, Circle, Clock, ChevronRight, MapPin,
-  Calendar, Paperclip, Trash2,
+    Calendar, Paperclip, Trash2, Pencil, Save, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { projectsApi, quotationsApi } from '@/lib/api';
@@ -40,7 +40,11 @@ const STAGE_COLOR: Record<StageStatus, string> = {
 
 export default function ProjectDetailPage({ id }: { id: string }) {
   const router = useRouter();
-  const [project, setProject]               = useState<Project | null>(null);
+    const [project, setProject] = useState<Project | null>(null);
+    const [editingDate, setEditingDate] = useState(false);
+    const [installationDate, setInstallationDate] = useState('');
+    const [savingDate, setSavingDate] = useState(false);
+
   const [loading, setLoading]               = useState(true);
   const [tab, setTab]                       = useState<Tab | null>(null);
   const [creatingQuotation, setCreating]    = useState(false);
@@ -51,8 +55,16 @@ export default function ProjectDetailPage({ id }: { id: string }) {
   const { isAdmin, isTrabajador } = useAuthStore();
 
   const load = async () => {
-    try {
-      setProject(await projectsApi.get(id!));
+      try {
+        const data = await projectsApi.get(id!);
+
+        setProject(data);
+        setInstallationDate(
+            data.fechaInstalacionTentativa
+                ? data.fechaInstalacionTentativa.split('T')[0]
+                : ''
+        );
+
     } catch {
       toast.error('Proyecto no encontrado');
       router.push('/proyectos');
@@ -88,7 +100,32 @@ export default function ProjectDetailPage({ id }: { id: string }) {
     } finally {
       setUpdatingStatus(false);
     }
-  };
+    };
+
+    const saveInstallationDate = async () => {
+        if (!project) return;
+
+        setSavingDate(true);
+
+        try {
+            await projectsApi.update(project.id, {
+                nombreProyecto: project.nombreProyecto,
+                ubicacion: project.ubicacion,
+                descripcion: project.descripcion,
+                fechaInstalacionTentativa: installationDate,
+            });
+
+            toast.success('Fecha actualizada');
+
+            setEditingDate(false);
+
+            await load();
+        } catch {
+            toast.error('No fue posible actualizar la fecha');
+        } finally {
+            setSavingDate(false);
+        }
+    };
 
   const handleDeleteProject = async () => {
     setDeleting(true);
@@ -169,11 +206,57 @@ export default function ProjectDetailPage({ id }: { id: string }) {
             {project.ubicacion && (
               <span className="flex items-center gap-1"><MapPin size={13} />{project.ubicacion}</span>
             )}
-            {project.fechaInstalacionTentativa && (
-              <span className="flex items-center gap-1">
-                <Calendar size={13} />{formatDate(project.fechaInstalacionTentativa)}
-              </span>
-            )}
+                      <div className="flex items-center gap-2">
+
+                          <Calendar size={13} />
+
+                          {!editingDate ? (
+                              <>
+                                  <span>
+                                      {project.fechaInstalacionTentativa
+                                          ? formatDate(project.fechaInstalacionTentativa)
+                                          : 'Sin definir'}
+                                  </span>
+
+                                  {isAdmin && (
+                                      <button
+                                          onClick={() => setEditingDate(true)}
+                                          className="text-wood-600 hover:text-wood-700"
+                                      >
+                                          <Pencil size={14} />
+                                      </button>
+                                  )}
+                              </>
+                          ) : (
+                              <>
+                                  <input
+                                      type="date"
+                                      value={installationDate}
+                                      onChange={(e) => setInstallationDate(e.target.value)}
+                                      className="input h-8 py-1 text-xs w-40"
+                                  />
+
+                                  <button
+                                      onClick={saveInstallationDate}
+                                      disabled={savingDate}
+                                      className="text-green-600 hover:text-green-700"
+                                  >
+                                      {savingDate
+                                          ? <Spinner size="sm" />
+                                          : <Save size={15} />
+                                      }
+                                  </button>
+
+                                  <button
+                                      onClick={() => setEditingDate(false)}
+                                      className="text-red-500 hover:text-red-600"
+                                  >
+                                      <X size={15} />
+                                  </button>
+                              </>
+                          )}
+
+                      </div>
           </div>
         </div>
         {isAdmin && (
