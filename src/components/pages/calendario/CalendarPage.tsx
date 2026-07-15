@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Truck, CreditCard, Plus, Pencil, Trash2, Clock, Users, Wrench, HelpCircle, X } from 'lucide-react';
@@ -32,9 +32,23 @@ function sameDay(a: Date, b: Date) {
 
 // ─── Modal de crear / editar evento ─────────────────
 const TIPOS_CUSTOM = ['MEDICION', 'TALLER', 'REUNION', 'OTRO'] as const;
+const AUDIENCIAS = [
+    { value: 'TODOS', label: 'Todo el personal' },
+    { value: 'ADMIN', label: 'Solo administradores' },
+    { value: 'ADMIN_EMPLEADOS', label: 'Administración y empleados' },
+    { value: 'ADMIN_TRABAJADORES', label: 'Administración y taller' },
+] as const;
+
 type TipoCustom = typeof TIPOS_CUSTOM[number];
 
-const emptyForm = { titulo: '', descripcion: '', fecha: '', tipo: 'REUNION' as TipoCustom, projectId: '' };
+const emptyForm = {
+    titulo: '',
+    descripcion: '',
+    fecha: '',
+    tipo: 'REUNION' as TipoCustom,
+    projectId: '',
+    audiencia: 'TODOS',
+};
 
 function EventModal({ event, onClose, onSaved }: {
   event?: CalendarEvent;
@@ -48,12 +62,15 @@ function EventModal({ event, onClose, onSaved }: {
           descripcion: event.description || '',
           fecha: event.date.slice(0, 10),
           tipo: event.type as TipoCustom,
-          projectId: event.projectId || '',
+              projectId: event.projectId || '',
+              audiencia: event.audiencia || 'TODOS',
         }
       : { ...emptyForm }
   );
   const [projects, setProjects] = useState<{ id: string; nombreProyecto: string }[]>([]);
-  const [saving, setSaving] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const { isAdmin } = useAuthStore();
+
 
   useEffect(() => {
     projectsApi.list().then((list) => setProjects(list));
@@ -65,10 +82,10 @@ function EventModal({ event, onClose, onSaved }: {
     setSaving(true);
     try {
       if (event?.dbId) {
-        await calendarApi.updateEvent(event.dbId, { ...form, projectId: form.projectId || undefined });
+          await calendarApi.updateEvent(event.dbId, { ...form, projectId: form.projectId || undefined, audiencia: form.audiencia });
         toast.success('Evento actualizado');
       } else {
-        await calendarApi.createEvent({ ...form, projectId: form.projectId || undefined });
+          await calendarApi.createEvent({ ...form, projectId: form.projectId || undefined,audiencia: form.audiencia });
         toast.success('Evento creado');
       }
       onSaved();
@@ -122,7 +139,29 @@ function EventModal({ event, onClose, onSaved }: {
               <option value="">Sin proyecto</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.nombreProyecto}</option>)}
             </select>
-          </div>
+                  </div>
+                  {isAdmin && (
+                      <div>
+                          <label className="label">Visible para</label>
+
+                          <select
+                              className="input"
+                              value={form.audiencia}
+                              onChange={(e) =>
+                                  setForm((p) => ({
+                                      ...p,
+                                      audiencia: e.target.value,
+                                  }))
+                              }
+                          >
+                              {AUDIENCIAS.map((a) => (
+                                  <option key={a.value} value={a.value}>
+                                      {a.label}
+                                  </option>
+                              ))}
+                          </select>
+                      </div>
+                  )}
           <div>
             <label className="label">Descripción (opcional)</label>
             <textarea className="input" rows={2} value={form.descripcion} onChange={(e) => setForm((p) => ({ ...p, descripcion: e.target.value }))}

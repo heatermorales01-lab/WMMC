@@ -1,4 +1,4 @@
-// ─── ENUMS ─────────────────────────────────────────────
+﻿// ─── ENUMS ─────────────────────────────────────────────
 export type ProjectStatus   = 'COTIZACION' | 'APROBADO' | 'PRODUCCION' | 'INSTALACION' | 'FINALIZADO' | 'CANCELADO';
 export type QuotationStatus = 'BORRADOR' | 'ENVIADA' | 'APROBADA' | 'RECHAZADA';
 export type SaleStatus      = 'ACTIVA' | 'FINALIZADA' | 'CANCELADA';
@@ -222,5 +222,6 @@ export interface CalendarEvent {
   porcentaje?: number | null;
   monto?: number | null;
   editable?: boolean;
-  createdBy?: string;
+    createdBy?: string;
+    audiencia?: string;
 }
