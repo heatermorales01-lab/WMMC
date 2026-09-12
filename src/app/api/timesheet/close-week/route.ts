@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAdmin } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
-import { startOfWeek, endOfWeek, endOfDay } from '@/lib/timesheet-helpers';
+import { startOfWeek, endOfWeek, endOfDay, calcularSalario, getUmbralHoras } from '@/lib/timesheet-helpers';
 
 export const POST = withAdmin(async (req, _ctx, user) => {
   try {
@@ -22,16 +22,27 @@ export const POST = withAdmin(async (req, _ctx, user) => {
     const byUser: Record<string, any[]> = {};
     for (const e of entries) { if (!byUser[e.userId]) byUser[e.userId] = []; byUser[e.userId].push(e); }
     const wageConfigs = await (prisma as any).userWageConfig.findMany({});
-    const wageMap: Record<string, number> = {};
-    for (const w of wageConfigs) wageMap[w.userId] = Number(w.tarifaHora);
+    const wageMap: Record<string, { tarifaHora: number; tarifaHoraExceso: number | null }> = {};
+    for (const w of wageConfigs) wageMap[w.userId] = { tarifaHora: Number(w.tarifaHora), tarifaHoraExceso: w.tarifaHoraExceso != null ? Number(w.tarifaHoraExceso) : null };
+    const umbralHoras = await getUmbralHoras();
     const summaries: any[] = [];
     await prisma.$transaction(async (tx: any) => {
       for (const [userId, userEntries] of Object.entries(byUser)) {
         const totalHoras = (userEntries as any[]).reduce((acc, e) => acc + Number(e.horasTrabajadas || 0), 0);
-        const tarifaHora = wageMap[userId] ?? null;
-        const salarioTotal = tarifaHora ? Number((totalHoras * tarifaHora).toFixed(2)) : null;
+        const wage = wageMap[userId];
+        const salarioTotal = wage ? calcularSalario(totalHoras, wage.tarifaHora, wage.tarifaHoraExceso, umbralHoras) : null;
         const summary = await tx.weeklyTimesheetSummary.create({
-          data: { userId, semanaInicio: rangeStart, semanaFin: rangeEnd, totalHoras: Number(totalHoras.toFixed(2)), tarifaHora, salarioTotal, cantidadDias: (userEntries as any[]).length, generadoPor: user.userId },
+          data: {
+            userId,
+            semanaInicio: rangeStart,
+            semanaFin: rangeEnd,
+            totalHoras: Number(totalHoras.toFixed(2)),
+            tarifaHora: wage?.tarifaHora ?? null,
+            tarifaHoraExceso: wage?.tarifaHoraExceso ?? null,
+            salarioTotal,
+            cantidadDias: (userEntries as any[]).length,
+            generadoPor: user.userId,
+          },
           include: { user: { select: { nombre: true } } },
         });
         summaries.push(summary);

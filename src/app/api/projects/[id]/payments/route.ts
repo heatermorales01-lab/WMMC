@@ -20,6 +20,7 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
             },
             include: {
                 receipt: true,
+                _count: { select: { receiptFiles: true } },
             },
             orderBy: {
                 fechaPago: 'desc',

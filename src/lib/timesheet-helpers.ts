@@ -85,6 +85,31 @@ export async function getMinutosPermitidos(): Promise<Record<string, number>> {
   return map;
 }
 
+const DEFAULT_UMBRAL_HORAS = 50;
+
+// Umbral semanal (en horas) a partir del cual se aplica la tarifa de exceso.
+// Configuración global de una sola fila, igual patrón que BreakPolicy.
+export async function getUmbralHoras(): Promise<number> {
+  const config = await (prisma as any).wageThreshold.findFirst();
+  return config?.umbralHoras ?? DEFAULT_UMBRAL_HORAS;
+}
+
+// Calcula el salario semanal aplicando dos tarifas: `tarifaHora` para las
+// primeras `umbralHoras` horas, y `tarifaHoraExceso` para las horas que
+// superen ese umbral. Si no hay tarifaHoraExceso configurada, se usa
+// tarifaHora para todo (comportamiento anterior, sin romper configs existentes).
+export function calcularSalario(
+  totalHoras: number,
+  tarifaHora: number,
+  tarifaHoraExceso: number | null | undefined,
+  umbralHoras: number
+): number {
+  const horasNormales = Math.min(totalHoras, umbralHoras);
+  const horasExceso = Math.max(0, totalHoras - umbralHoras);
+  const tarifaExceso = tarifaHoraExceso ?? tarifaHora;
+  return Number((horasNormales * tarifaHora + horasExceso * tarifaExceso).toFixed(2));
+}
+
 export function getFase(entry: any): string {
   if (!entry) return 'SIN_INICIAR';
   if (entry.horaSalida) return 'FINALIZADO';

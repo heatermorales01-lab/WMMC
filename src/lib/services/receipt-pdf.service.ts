@@ -281,7 +281,7 @@ export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer> 
         ],
       },
     ],
-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
+    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
   };
 
   return buildPdfBuffer(createPrinter(), doc);

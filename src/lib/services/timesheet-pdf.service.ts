@@ -191,7 +191,7 @@ export async function generateWeeklyTimesheetPDF(data: WeeklyReportData): Promis
         layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingTop: () => 8, paddingBottom: () => 8, paddingLeft: () => 10, paddingRight: () => 10 },
       },
     ],
-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
+    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
   };
 
   return buildPdfBuffer(createPrinter(), doc);

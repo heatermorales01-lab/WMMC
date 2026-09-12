@@ -75,6 +75,16 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
     // Usar nombre personalizado si existe, si no el nombre técnico del tipo
     const nombreMostrar = (item as any).nombrePersonalizado || item.furnitureType.nombre;
 
+    // item.subtotal ya viene combinado (mueble + accesorios) desde el backend.
+    // Para que el PDF no dé la impresión de que cada accesorio es un producto
+    // aparte, mostramos en la fila principal SOLO el precio del mueble, cada
+    // accesorio con el suyo debajo (en un bloque con fondo tenue), y cerramos
+    // el grupo con una fila de "Subtotal del mueble" que suma ambos —
+    // así queda explícito que el total ya incluye los accesorios listados.
+    const subtotalExtras = item.quotationItemExtras.reduce((acc, ex) => acc + Number(ex.subtotal), 0);
+    const subtotalMueble = Number(item.subtotal) - subtotalExtras;
+    const tieneExtras = item.quotationItemExtras.length > 0;
+
     itemRows.push([
       { text: String(idx + 1), alignment: 'center', fontSize: 8, color: C.slate500 },
       {
@@ -86,18 +96,36 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       },
       { text: String(item.cantidad), alignment: 'center', fontSize: 9 },
       { text: crc(item.precioUnitario), alignment: 'right', fontSize: 9 },
-      { text: crc(item.subtotal), alignment: 'right', fontSize: 9, bold: true },
+      { text: crc(subtotalMueble), alignment: 'right', fontSize: 9, bold: true },
     ]);
 
     item.quotationItemExtras.forEach(ex => {
       itemRows.push([
-        { text: '', border: [false,false,false,false] },
-        { text: `  ↳ ${ex.extra.nombre} × ${ex.cantidad}`, fontSize: 8, color: C.slate500, italics: true, border: [false,false,false,false] },
-        { text: '', border: [false,false,false,false] },
-        { text: '', border: [false,false,false,false] },
-        { text: crc(ex.subtotal), alignment: 'right', fontSize: 8, color: C.slate500, border: [false,false,false,false] },
+        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
+        { text: `  ↳ ${ex.extra.nombre} × ${ex.cantidad}`, fontSize: 8, color: C.slate500, italics: true, border: [false,false,false,false], fillColor: C.slate50 },
+        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
+        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
+        { text: crc(ex.subtotal), alignment: 'right', fontSize: 8, color: C.slate500, border: [false,false,false,false], fillColor: C.slate50 },
       ]);
     });
+
+    if (tieneExtras) {
+      itemRows.push([
+        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
+        {
+          text: 'Subtotal del mueble (incluye accesorios)', colSpan: 3, alignment: 'right',
+          fontSize: 8, bold: true, italics: true, color: C.slate700,
+          border: [false,false,false,true], borderColor: [C.slate200,C.slate200,C.slate200,C.slate200],
+          fillColor: C.slate50,
+        },
+        {}, {},
+        {
+          text: crc(item.subtotal), alignment: 'right', fontSize: 9, bold: true, color: C.slate900,
+          border: [false,false,false,true], borderColor: [C.slate200,C.slate200,C.slate200,C.slate200],
+          fillColor: C.slate50,
+        },
+      ]);
+    }
   });
 
   // Filas de servicios
@@ -275,7 +303,7 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
         ],
       },
     ],
-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
+    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
   };
 
   return buildPdfBuffer(createPrinter(), doc);

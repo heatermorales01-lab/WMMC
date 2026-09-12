@@ -35,6 +35,7 @@ function AddItemForm({
     alto: '',
     ancho: '',
     cantidad: 1,
+    fondoPersonalizado: '',
     estiloDoble: 'FUNCIONAL',
     tipoCajonEspecial: false,
     cascada: 'NINGUNA',
@@ -56,6 +57,7 @@ function AddItemForm({
             alto: item.alto || '',
             ancho: item.ancho || '',
             cantidad: item.cantidad,
+            fondoPersonalizado: (item as any).fondoPersonalizado || '',
 
             estiloDoble: (item as any).estiloDoble || 'FUNCIONAL',
             tipoCajonEspecial: (item as any).tipoCajonEspecial || false,
@@ -119,6 +121,7 @@ function AddItemForm({
         ancho: form.ancho ? Number(form.ancho) : undefined,
         cantidad: Number(form.cantidad),
         countertopTypeId: form.countertopTypeId || undefined,
+        fondoPersonalizado: form.fondoPersonalizado?.trim() || null,
       });
       onClose();
     } finally {

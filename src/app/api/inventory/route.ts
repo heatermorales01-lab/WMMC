@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withAuth, withAdmin } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
+import { logInventoryMovement } from '@/lib/audit';
 
 export const GET = withAuth(async () => {
     try {
@@ -25,7 +26,7 @@ export const GET = withAuth(async () => {
     }
 });
 
-export const POST = withAdmin(async (req) => {
+export const POST = withAdmin(async (req, _ctx, user) => {
   try {
       const {
           nombre,
@@ -48,6 +49,15 @@ export const POST = withAdmin(async (req) => {
               stockMinimo: Number(stockMinimo) || 0,
           },
       });
+
+      await logInventoryMovement({
+        userId: user.userId,
+        itemId: item.id,
+        itemNombre: item.nombre,
+        tipoMovimiento: 'CREAR',
+        detalle: { stockActual: item.stockActual, stockMinimo: item.stockMinimo },
+      });
+
     return NextResponse.json({ ok: true, data: item }, { status: 201 });
   } catch (e) { return handleError(e); }
 });

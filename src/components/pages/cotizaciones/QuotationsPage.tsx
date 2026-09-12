@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FileText, ArrowRight, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { quotationsApi } from '@/lib/api';
@@ -9,6 +10,7 @@ import { formatCRC, formatDate } from '@/types';
 import { PageLoader, QuotationBadge, EmptyState, Confirm } from '@/components/ui';
 
 export default function QuotationsPage() {
+  const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -61,14 +63,18 @@ export default function QuotationsPage() {
                 <tr><td colSpan={7}><EmptyState icon={<FileText size={24} />} title="Sin cotizaciones" /></td></tr>
               ) : (
                 quotations.map((q) => (
-                  <tr key={q.id}>
+                  <tr
+                    key={q.id}
+                    onClick={() => router.push(`/cotizaciones/${q.id}`)}
+                    className="cursor-pointer hover:bg-slate-50"
+                  >
                     <td className="font-semibold">v{q.version}</td>
                     <td>{q.project?.nombreProyecto || '—'}</td>
                     <td>{q.project?.client?.nombre || '—'}</td>
                     <td><QuotationBadge status={q.estado} /></td>
                     <td className="font-semibold">{formatCRC(q.total)}</td>
                     <td>{formatDate(q.createdAt)}</td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <Link href={`/cotizaciones/${q.id}`} className="btn-ghost btn-sm">
                           Ver <ArrowRight size={12} />
