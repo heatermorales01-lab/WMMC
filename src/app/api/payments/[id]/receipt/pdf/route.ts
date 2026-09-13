@@ -84,7 +84,7 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
 
         });
 
-        return new NextResponse(pdf, {
+        return new NextResponse(new Uint8Array(pdf), {
             headers: {
                 "Content-Type": "application/pdf",
                 "Content-Disposition":

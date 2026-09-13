@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Package, Plus, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Package, Plus, AlertTriangle, ArrowUp, ArrowDown, Pencil, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { inventoryApi } from '@/lib/api';
 import type { InventoryItem } from '@/types';
-import { PageLoader, EmptyState, Modal, FormGroup, Spinner } from '@/components/ui';
+import { PageLoader, EmptyState, Modal, FormGroup, Spinner, Confirm } from '@/components/ui';
 import { useAuthStore } from '@/store/auth.store';
 
 export default function InventoryPage() {
@@ -17,6 +17,10 @@ export default function InventoryPage() {
   const [adjustQty, setAdjustQty] = useState(1);
   const [saving, setSaving] = useState(false);
   const [newItem, setNewItem] = useState({ nombre: '', categoria: '', unidadMedida: '', stockMinimo: 0 });
+  const [editItem, setEditItem] = useState<InventoryItem | null>(null);
+  const [editForm, setEditForm] = useState({ nombre: '', categoria: '', unidadMedida: '' });
+  const [deleteItem, setDeleteItem] = useState<InventoryItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
     const load = async () => {
         try {
@@ -68,6 +72,42 @@ export default function InventoryPage() {
       toast.error(err.response?.data?.error || 'Error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEdit = (item: InventoryItem) => {
+    setEditItem(item);
+    setEditForm({ nombre: item.nombre, categoria: item.categoria || '', unidadMedida: item.unidadMedida || '' });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editItem) return;
+    if (!editForm.nombre.trim()) { toast.error('El nombre es requerido'); return; }
+    setSaving(true);
+    try {
+      await inventoryApi.update(editItem.id, editForm);
+      toast.success('Item actualizado');
+      setEditItem(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteItem) return;
+    setDeleting(true);
+    try {
+      await inventoryApi.delete(deleteItem.id);
+      toast.success('Item eliminado');
+      setDeleteItem(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'No se pudo eliminar');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -136,6 +176,16 @@ export default function InventoryPage() {
                           >
                             <ArrowDown size={13} />
                           </button>
+                          {isAdmin && (
+                            <>
+                              <button className="btn-ghost btn-sm" onClick={() => openEdit(item)} title="Editar">
+                                <Pencil size={13} />
+                              </button>
+                              <button className="btn-ghost btn-sm text-danger" onClick={() => setDeleteItem(item)} title="Eliminar">
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -194,6 +244,40 @@ export default function InventoryPage() {
             </div>
           </div>
         </Modal>
+      )}
+      {/* Modal editar item (solo admin) */}
+      {editItem && (
+        <Modal title={`Editar — ${editItem.nombre}`} onClose={() => setEditItem(null)} size="sm">
+          <div className="space-y-4">
+            <FormGroup label="Nombre" required>
+              <input className="input" value={editForm.nombre} onChange={(e) => setEditForm((p) => ({ ...p, nombre: e.target.value }))} />
+            </FormGroup>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormGroup label="Categoría">
+                <input className="input" value={editForm.categoria} onChange={(e) => setEditForm((p) => ({ ...p, categoria: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="Unidad">
+                <input className="input" value={editForm.unidadMedida} onChange={(e) => setEditForm((p) => ({ ...p, unidadMedida: e.target.value }))} />
+              </FormGroup>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setEditItem(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={handleSaveEdit} disabled={saving}>
+                {saving ? <Spinner size="sm" /> : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirmar eliminación (solo admin) */}
+      {deleteItem && (
+        <Confirm
+          message={`¿Eliminar "${deleteItem.nombre}" del inventario? Esta acción no se puede deshacer.`}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteItem(null)}
+          loading={deleting}
+        />
       )}
     </div>
   );

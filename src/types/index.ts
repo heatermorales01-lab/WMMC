@@ -136,6 +136,7 @@ export interface Payment {
   observaciones?: string;
   fechaPago: string;
   receipt?: Receipt;
+  _count?: { receiptFiles: number };
 }
 
 export interface Receipt {

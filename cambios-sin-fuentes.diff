@@ -1,0 +1,2989 @@
+diff --git a/package.json b/package.json
+index 1a9552d..1571aa1 100644
+--- a/package.json
++++ b/package.json
+@@ -19,6 +19,7 @@
+     "react-dom": "^18.3.1",
+     "react-hook-form": "^7.80.0",
+     "react-hot-toast": "^2.6.0",
++    "web-push": "^3.6.7",
+     "zod": "^4.4.3",
+     "zustand": "^5.0.14"
+   },
+@@ -29,6 +30,7 @@
+     "@types/pdfmake": "^0.3.3",
+     "@types/react": "^19.2.17",
+     "@types/react-dom": "^19.2.3",
++    "@types/web-push": "^3.6.4",
+     "autoprefixer": "^10.5.2",
+     "postcss": "^8.5.16",
+     "tailwindcss": "^3.4.17",
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 2f1d3a6..6fe0b49 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -42,10 +42,98 @@ model User {
+   weeklySummaries  WeeklyTimesheetSummary[]
+   calendarEvents   CalendarEvent[]
+   wageConfig       UserWageConfig?
++  pushSubscriptions PushSubscription[]
++  catalogAuditLogs   CatalogAuditLog[]
++  inventoryAuditLogs InventoryAuditLog[]
++  timesheetAuditLogsAsAdmin      TimesheetAuditLog[] @relation("TimesheetAuditAdmin")
++  timesheetAuditLogsAsTrabajador TimesheetAuditLog[] @relation("TimesheetAuditTrabajador")
+ 
+   @@map("users")
+ }
+ 
++// =====================================
++// BITÁCORAS / AUDITORÍA
++// =====================================
++
++// Bitácora de catálogo y precios (punto 10)
++model CatalogAuditLog {
++  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  userId       String   @map("user_id") @db.Uuid
++  modulo       String   @db.VarChar(50) // MATERIALES | TIPOS_MUEBLE | TABLETOPS | EXTRAS | SERVICIOS | PRECIOS
++  accion       String   @db.VarChar(20) // CREAR | EDITAR | ELIMINAR
++  entidadId    String?  @map("entidad_id") @db.Uuid
++  entidadNombre String? @map("entidad_nombre")
++  valorAnterior Json?   @map("valor_anterior")
++  valorNuevo    Json?   @map("valor_nuevo")
++  createdAt    DateTime @default(now()) @map("created_at")
++
++  user User @relation(fields: [userId], references: [id])
++
++  @@map("catalog_audit_logs")
++}
++
++// Bitácora de inventario (punto 10)
++model InventoryAuditLog {
++  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  userId        String   @map("user_id") @db.Uuid
++  itemId        String?  @map("item_id") @db.Uuid
++  itemNombre    String   @map("item_nombre")
++  tipoMovimiento String  @map("tipo_movimiento") @db.VarChar(20) // ENTRADA | SALIDA | CREAR | EDITAR | ELIMINAR
++  cantidad      Int?
++  detalle       Json?
++  createdAt     DateTime @default(now()) @map("created_at")
++
++  user User @relation(fields: [userId], references: [id])
++
++  @@map("inventory_audit_logs")
++}
++
++// Bitácora de correcciones manuales de horario por el admin (punto 9)
++model TimesheetAuditLog {
++  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  adminId          String   @map("admin_id") @db.Uuid
++  trabajadorId     String   @map("trabajador_id") @db.Uuid
++  timesheetEntryId String   @map("timesheet_entry_id") @db.Uuid
++  campo            String   @db.VarChar(50)
++  valorAnterior    String?  @map("valor_anterior")
++  valorNuevo       String?  @map("valor_nuevo")
++  motivo           String?
++  createdAt        DateTime @default(now()) @map("created_at")
++
++  admin      User @relation("TimesheetAuditAdmin", fields: [adminId], references: [id])
++  trabajador User @relation("TimesheetAuditTrabajador", fields: [trabajadorId], references: [id])
++
++  @@map("timesheet_audit_logs")
++}
++// celular, tablet, etc.). Se usan para avisar de descansos vencidos
++// aunque el trabajador tenga la PWA cerrada.
++model PushSubscription {
++  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  userId    String   @map("user_id") @db.Uuid
++  endpoint  String   @unique
++  p256dh    String
++  auth      String
++  createdAt DateTime @default(now()) @map("created_at")
++
++  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
++
++  @@map("push_subscriptions")
++}
++
++// Evita reenviar el push cada minuto mientras el descanso siga vencido:
++// una fila por (entrada de horario, tipo de descanso) una vez notificado.
++// No toca TimesheetEntry ni las rutas de inicio/fin de descanso — es
++// puramente aditivo, así que no hay riesgo de romper esa lógica existente.
++model PushAlertLog {
++  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  timesheetEntryId String   @map("timesheet_entry_id") @db.Uuid
++  tipo             String   @db.VarChar(20) // DESAYUNO | ALMUERZO | CAFE
++  sentAt           DateTime @default(now()) @map("sent_at")
++
++  @@unique([timesheetEntryId, tipo])
++  @@map("push_alert_logs")
++}
++
+ // =====================================
+ // CLIENTES
+ // =====================================
+@@ -60,6 +148,7 @@ model Client {
+   updatedAt     DateTime @updatedAt @map("updated_at")
+ 
+   projects Project[]
++  paymentReceiptFiles PaymentReceiptFile[]
+ 
+   @@map("clients")
+ }
+@@ -326,10 +415,35 @@ model Payment {
+ 
+   project Project @relation(fields: [projectId], references: [id])
+   receipt Receipt?
++  receiptFiles PaymentReceiptFile[]
+ 
+   @@map("payments")
+ }
+ 
++// Imágenes de respaldo de comprobantes de pago (capturas/fotos que el
++// cliente envía). Independiente del `comprobanteUrl` de texto libre que
++// ya existía (RN09) y del PDF generado por el sistema (`Receipt`) — esto
++// es solo almacenamiento de respaldo, visible únicamente para
++// administración (el panel de Pagos ya está bloqueado para TRABAJADOR).
++model PaymentReceiptFile {
++  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  paymentId     String   @map("payment_id") @db.Uuid
++  // Denormalizado desde project.clientId para poder consultar/filtrar
++  // por cliente sin tener que pasar por Project — y para dejar explícita
++  // la relación con el cliente que pide el punto 4.
++  clientId      String?  @map("client_id") @db.Uuid
++  storagePath   String   @map("storage_path")
++  nombreArchivo String   @map("nombre_archivo")
++  mimeType      String   @map("mime_type")
++  subidoPor     String   @map("subido_por") @db.Uuid
++  createdAt     DateTime @default(now()) @map("created_at")
++
++  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
++  client  Client? @relation(fields: [clientId], references: [id])
++
++  @@map("payment_receipt_files")
++}
++
+ // =====================================
+ // RECIBOS
+ // =====================================
+@@ -448,6 +562,9 @@ model WeeklyTimesheetSummary {
+   semanaFin     DateTime @map("semana_fin") @db.Date
+   totalHoras    Decimal  @map("total_horas") @db.Decimal(6, 2)
+   tarifaHora    Decimal? @map("tarifa_hora") @db.Decimal(10, 2)
++  // Se guarda también la tarifa de exceso vigente al momento del cierre,
++  // para que el resumen archivado sea auditable aunque luego cambien las tarifas.
++  tarifaHoraExceso Decimal? @map("tarifa_hora_exceso") @db.Decimal(10, 2)
+   salarioTotal  Decimal? @map("salario_total") @db.Decimal(12, 2)
+   cantidadDias  Int      @map("cantidad_dias")
+   generadoPor   String   @map("generado_por") @db.Uuid
+@@ -460,16 +577,30 @@ model WeeklyTimesheetSummary {
+ 
+ // Configuración de tarifa por hora por usuario
+ model UserWageConfig {
+-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  userId        String   @unique @map("user_id") @db.Uuid
+-  tarifaHora    Decimal  @map("tarifa_hora") @db.Decimal(10, 2)
+-  updatedAt     DateTime @updatedAt @map("updated_at")
++  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  userId            String   @unique @map("user_id") @db.Uuid
++  tarifaHora        Decimal  @map("tarifa_hora") @db.Decimal(10, 2)
++  // Tarifa aplicada a las horas trabajadas por encima del umbral semanal
++  // (WageThreshold.umbralHoras). Si es null, se usa tarifaHora para todo.
++  tarifaHoraExceso  Decimal? @map("tarifa_hora_exceso") @db.Decimal(10, 2)
++  updatedAt         DateTime @updatedAt @map("updated_at")
+ 
+   user User @relation(fields: [userId], references: [id])
+ 
+   @@map("user_wage_configs")
+ }
+ 
++// Configuración global (una sola fila) del umbral de horas semanales a
++// partir del cual se aplica la tarifa de exceso. Editable por el admin
++// para no dejarlo fijo en el código (hoy: 50 horas).
++model WageThreshold {
++  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  umbralHoras Int      @default(50) @map("umbral_horas")
++  updatedAt   DateTime @updatedAt @map("updated_at")
++
++  @@map("wage_thresholds")
++}
++
+ // =====================================
+ // AUDIENCIA DEL EVENTO
+ // =====================================
+diff --git a/public/service-worker.js b/public/service-worker.js
+new file mode 100644
+index 0000000..23653b1
+--- /dev/null
++++ b/public/service-worker.js
+@@ -0,0 +1,49 @@
++// public/service-worker.js
++// Debe quedar en la raíz servida (https://tu-dominio/service-worker.js) para
++// poder registrarse con scope '/'. No usa ningún framework de PWA — es un
++// service worker mínimo, solo para push notifications (no cachea nada).
++
++self.addEventListener('install', () => {
++  self.skipWaiting();
++});
++
++self.addEventListener('activate', (event) => {
++  event.waitUntil(self.clients.claim());
++});
++
++self.addEventListener('push', (event) => {
++  let data = {};
++  try {
++    data = event.data ? event.data.json() : {};
++  } catch {
++    data = { title: 'Control de Horario', body: event.data ? event.data.text() : '' };
++  }
++
++  const title = data.title || '🚨 Descanso terminado';
++  const options = {
++    body: data.body || 'Regresa a la app y marca "Finalizar descanso".',
++    icon: '/icon.png',
++    badge: '/icon.png',
++    vibrate: [200, 100, 200, 100, 200],
++    tag: data.tag || 'break-alarm',
++    renotify: true,
++    requireInteraction: true,
++    data: { url: data.url || '/horario' },
++  };
++
++  event.waitUntil(self.registration.showNotification(title, options));
++});
++
++self.addEventListener('notificationclick', (event) => {
++  event.notification.close();
++  const targetUrl = event.notification.data?.url || '/horario';
++
++  event.waitUntil(
++    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
++      for (const client of clientList) {
++        if (client.url.includes(targetUrl) && 'focus' in client) return client.focus();
++      }
++      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
++    })
++  );
++});
+diff --git a/src/app/(app)/bitacoras/page.tsx b/src/app/(app)/bitacoras/page.tsx
+new file mode 100644
+index 0000000..285285d
+--- /dev/null
++++ b/src/app/(app)/bitacoras/page.tsx
+@@ -0,0 +1,3 @@
++'use client';
++import AuditLogsPage from '@/components/pages/bitacoras/AuditLogsPage';
++export default function Page() { return <AuditLogsPage />; }
+diff --git a/src/app/api/audit-logs/route.ts b/src/app/api/audit-logs/route.ts
+new file mode 100644
+index 0000000..1b2b0c6
+--- /dev/null
++++ b/src/app/api/audit-logs/route.ts
+@@ -0,0 +1,53 @@
++import { NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withAdmin } from '@/lib/auth';
++import { handleError } from '@/lib/errors';
++
++// tipo=catalogo|inventario|horario, más filtros comunes: usuario, desde, hasta
++export const GET = withAdmin(async (req) => {
++  try {
++    const { searchParams } = new URL(req.url);
++    const tipo = searchParams.get('tipo') || 'catalogo';
++    const userId = searchParams.get('userId') || undefined;
++    const desde = searchParams.get('desde');
++    const hasta = searchParams.get('hasta');
++    const dateFilter = (desde || hasta) ? {
++      createdAt: {
++        ...(desde ? { gte: new Date(desde) } : {}),
++        ...(hasta ? { lte: new Date(hasta + 'T23:59:59') } : {}),
++      },
++    } : {};
++
++    if (tipo === 'inventario') {
++      const logs = await (prisma as any).inventoryAuditLog.findMany({
++        where: { ...(userId ? { userId } : {}), ...dateFilter },
++        include: { user: { select: { nombre: true } } },
++        orderBy: { createdAt: 'desc' },
++        take: 500,
++      });
++      return NextResponse.json({ ok: true, data: logs });
++    }
++
++    if (tipo === 'horario') {
++      const logs = await (prisma as any).timesheetAuditLog.findMany({
++        where: { ...(userId ? { adminId: userId } : {}), ...dateFilter },
++        include: {
++          admin: { select: { nombre: true } },
++          trabajador: { select: { nombre: true } },
++        },
++        orderBy: { createdAt: 'desc' },
++        take: 500,
++      });
++      return NextResponse.json({ ok: true, data: logs });
++    }
++
++    // catálogo (default)
++    const logs = await (prisma as any).catalogAuditLog.findMany({
++      where: { ...(userId ? { userId } : {}), ...dateFilter },
++      include: { user: { select: { nombre: true } } },
++      orderBy: { createdAt: 'desc' },
++      take: 500,
++    });
++    return NextResponse.json({ ok: true, data: logs });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/calendar/events/route.ts b/src/app/api/calendar/events/route.ts
+index b9b121b..43d9d47 100644
+--- a/src/app/api/calendar/events/route.ts
++++ b/src/app/api/calendar/events/route.ts
+@@ -13,9 +13,9 @@ const AUDIENCIAS = [
+ 
+ export const GET = withAuth(async (_req, _ctx, user) => {
+   try {
+-      const isAdmin = user.roleName === 'ADMIN';
+-      const isEmpleado = user.roleName === 'ADMIN_EMPLEADO';
+-      const isTrabajador = user.roleName === 'ADMIN_TRABAJADORES';
++      const isAdmin = user.roleName === 'ADMINISTRADOR';
++      const isEmpleado = user.roleName === 'EMPLEADO';
++      const isTrabajador = user.roleName === 'TRABAJADOR';
+       console.log({
+           role: user.roleName,
+           isAdmin,
+diff --git a/src/app/api/catalog/countertop-types/[id]/route.ts b/src/app/api/catalog/countertop-types/[id]/route.ts
+index 44ab664..43d3723 100644
+--- a/src/app/api/catalog/countertop-types/[id]/route.ts
++++ b/src/app/api/catalog/countertop-types/[id]/route.ts
+@@ -2,20 +2,38 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PATCH = withAdmin(async (req, { params }) => {
++export const PATCH = withAdmin(async (req, { params }, user) => {
+   try {
+     const { precioM2 } = await req.json();
++    const before = await prisma.countertopType.findUnique({ where: { id: params.id } });
++    if (!before) throw new AppError('Tipo de sobre no encontrado', 404);
+     const ct = await prisma.countertopType.update({ where: { id: params.id }, data: { precioM2: Number(precioM2) } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TABLETOPS', accion: 'EDITAR',
++      entidadId: ct.id, entidadNombre: ct.nombre,
++      valorAnterior: { precioM2: before.precioM2 }, valorNuevo: { precioM2: ct.precioM2 },
++    });
++
+     return NextResponse.json({ ok: true, data: ct });
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (_req, { params }, user) => {
+   try {
++    const ct = await prisma.countertopType.findUnique({ where: { id: params.id } });
++    if (!ct) throw new AppError('Tipo de sobre no encontrado', 404);
+     const count = await prisma.quotationItem.count({ where: { countertopTypeId: params.id } });
+     if (count > 0) throw new AppError(`No se puede eliminar: usado en ${count} cotización(es)`, 409);
+     await prisma.countertopType.delete({ where: { id: params.id } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TABLETOPS', accion: 'ELIMINAR',
++      entidadId: ct.id, entidadNombre: ct.nombre, valorAnterior: { precioM2: ct.precioM2 },
++    });
++
+     return NextResponse.json({ ok: true, message: 'Tipo de sobre eliminado' });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/countertop-types/route.ts b/src/app/api/catalog/countertop-types/route.ts
+index ce55811..ef2ac1f 100644
+--- a/src/app/api/catalog/countertop-types/route.ts
++++ b/src/app/api/catalog/countertop-types/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+   try {
+@@ -10,11 +11,17 @@ export const GET = withAuth(async () => {
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+     const { nombre, precioM2 } = await req.json();
+     if (!nombre) throw new AppError('nombre es requerido', 400);
+     const ct = await prisma.countertopType.create({ data: { nombre, precioM2: Number(precioM2) } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TABLETOPS', accion: 'CREAR',
++      entidadId: ct.id, entidadNombre: ct.nombre, valorNuevo: { precioM2: ct.precioM2 },
++    });
++
+     return NextResponse.json({ ok: true, data: ct }, { status: 201 });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/extras/[id]/route.ts b/src/app/api/catalog/extras/[id]/route.ts
+index e43b48d..ac37007 100644
+--- a/src/app/api/catalog/extras/[id]/route.ts
++++ b/src/app/api/catalog/extras/[id]/route.ts
+@@ -2,23 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PUT = withAdmin(async (req, { params }) => {
++export const PUT = withAdmin(async (req, { params }, user) => {
+   try {
+     const { nombre, precio, unidad } = await req.json();
++    const before = await prisma.extra.findUnique({ where: { id: params.id } });
++    if (!before) throw new AppError('Extra no encontrado', 404);
+     const extra = await prisma.extra.update({ where: { id: params.id }, data: { nombre, precio: Number(precio), unidad } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'EXTRAS', accion: 'EDITAR',
++      entidadId: extra.id, entidadNombre: extra.nombre,
++      valorAnterior: { nombre: before.nombre, precio: before.precio, unidad: before.unidad },
++      valorNuevo: { nombre: extra.nombre, precio: extra.precio, unidad: extra.unidad },
++    });
++
+     return NextResponse.json({ ok: true, data: extra });
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (_req, { params }, user) => {
+   try {
++    const extra = await prisma.extra.findUnique({ where: { id: params.id } });
++    if (!extra) throw new AppError('Extra no encontrado', 404);
+     const count = await prisma.quotationItemExtra.count({ where: { extraId: params.id } });
+     if (count === 0) {
+       await prisma.extra.delete({ where: { id: params.id } });
++      await logCatalogChange({
++        userId: user.userId, modulo: 'EXTRAS', accion: 'ELIMINAR',
++        entidadId: extra.id, entidadNombre: extra.nombre, valorAnterior: { precio: extra.precio },
++      });
+       return NextResponse.json({ ok: true, message: 'Extra eliminado permanentemente' });
+     }
+     const updated = await prisma.extra.update({ where: { id: params.id }, data: { activo: false } });
++    await logCatalogChange({
++      userId: user.userId, modulo: 'EXTRAS', accion: 'ELIMINAR',
++      entidadId: extra.id, entidadNombre: extra.nombre,
++      valorAnterior: { activo: true }, valorNuevo: { activo: false, motivo: 'usado en cotizaciones, se desactivó en vez de borrar' },
++    });
+     return NextResponse.json({ ok: true, data: updated, message: `Usado en ${count} cotización(es), se desactivó para preservar historial.` });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/extras/[id]/toggle/route.ts b/src/app/api/catalog/extras/[id]/toggle/route.ts
+index 7103fff..745c08b 100644
+--- a/src/app/api/catalog/extras/[id]/toggle/route.ts
++++ b/src/app/api/catalog/extras/[id]/toggle/route.ts
+@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PATCH = withAdmin(async (_req, { params }) => {
++export const PATCH = withAdmin(async (_req, { params }, user) => {
+   try {
+     const extra = await prisma.extra.findUnique({ where: { id: params.id } });
+     if (!extra) throw new AppError('Extra no encontrado', 404);
+     const updated = await prisma.extra.update({ where: { id: params.id }, data: { activo: !extra.activo } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'EXTRAS', accion: 'EDITAR',
++      entidadId: extra.id, entidadNombre: extra.nombre,
++      valorAnterior: { activo: extra.activo }, valorNuevo: { activo: updated.activo },
++    });
++
+     return NextResponse.json({ ok: true, data: updated });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/extras/route.ts b/src/app/api/catalog/extras/route.ts
+index aab6e45..5a4ddf6 100644
+--- a/src/app/api/catalog/extras/route.ts
++++ b/src/app/api/catalog/extras/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+   try {
+@@ -10,11 +11,17 @@ export const GET = withAuth(async () => {
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+     const { nombre, precio, unidad } = await req.json();
+     if (!nombre) throw new AppError('nombre es requerido', 400);
+     const extra = await prisma.extra.create({ data: { nombre, precio: Number(precio), unidad } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'EXTRAS', accion: 'CREAR',
++      entidadId: extra.id, entidadNombre: extra.nombre, valorNuevo: { precio: extra.precio, unidad: extra.unidad },
++    });
++
+     return NextResponse.json({ ok: true, data: extra }, { status: 201 });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/furniture-types/[id]/route.ts b/src/app/api/catalog/furniture-types/[id]/route.ts
+index 0d8c778..0694ac3 100644
+--- a/src/app/api/catalog/furniture-types/[id]/route.ts
++++ b/src/app/api/catalog/furniture-types/[id]/route.ts
+@@ -2,21 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PATCH = withAdmin(async (req, { params }) => {
++export const PATCH = withAdmin(async (req, { params }, user) => {
+   try {
+     const { precioBase } = await req.json();
++    const before = await prisma.furnitureType.findUnique({ where: { id: params.id } });
++    if (!before) throw new AppError('Tipo de mueble no encontrado', 404);
+     const ft = await prisma.furnitureType.update({ where: { id: params.id }, data: { precioBase: Number(precioBase) } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TIPOS_MUEBLE', accion: 'EDITAR',
++      entidadId: ft.id, entidadNombre: ft.nombre,
++      valorAnterior: { precioBase: before.precioBase }, valorNuevo: { precioBase: ft.precioBase },
++    });
++
+     return NextResponse.json({ ok: true, data: ft });
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (_req, { params }, user) => {
+   try {
++    const ft = await prisma.furnitureType.findUnique({ where: { id: params.id } });
++    if (!ft) throw new AppError('Tipo de mueble no encontrado', 404);
+     const usageCount = await prisma.quotationItem.count({ where: { furnitureTypeId: params.id } });
+     if (usageCount > 0) throw new AppError(`No se puede eliminar: está usado en ${usageCount} cotización(es)`, 409);
+     await (prisma as any).materialFurniturePrice.deleteMany({ where: { furnitureTypeId: params.id } });
+     await prisma.furnitureType.delete({ where: { id: params.id } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TIPOS_MUEBLE', accion: 'ELIMINAR',
++      entidadId: ft.id, entidadNombre: ft.nombre, valorAnterior: { precioBase: ft.precioBase },
++    });
++
+     return NextResponse.json({ ok: true, message: 'Tipo de mueble eliminado' });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/furniture-types/route.ts b/src/app/api/catalog/furniture-types/route.ts
+index 4720466..1ddaa2b 100644
+--- a/src/app/api/catalog/furniture-types/route.ts
++++ b/src/app/api/catalog/furniture-types/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+   try {
+@@ -10,11 +11,17 @@ export const GET = withAuth(async () => {
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+     const { nombre, precioBase } = await req.json();
+     if (!nombre) throw new AppError('nombre es requerido', 400);
+     const ft = await prisma.furnitureType.create({ data: { nombre, precioBase: Number(precioBase) || 0 } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'TIPOS_MUEBLE', accion: 'CREAR',
++      entidadId: ft.id, entidadNombre: ft.nombre, valorNuevo: { precioBase: ft.precioBase },
++    });
++
+     return NextResponse.json({ ok: true, data: ft }, { status: 201 });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/material-prices/route.ts b/src/app/api/catalog/material-prices/route.ts
+index 8e35593..8370ff6 100644
+--- a/src/app/api/catalog/material-prices/route.ts
++++ b/src/app/api/catalog/material-prices/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+   try {
+@@ -17,15 +18,31 @@ export const GET = withAuth(async () => {
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+     const { furnitureTypeId, materialId, precio, precioBase210, costoExtraCm } = await req.json();
++
++    const before = await (prisma as any).materialFurniturePrice.findUnique({
++      where: { furnitureTypeId_materialId: { furnitureTypeId, materialId } },
++    });
++
+     const record = await (prisma as any).materialFurniturePrice.upsert({
+       where: { furnitureTypeId_materialId: { furnitureTypeId, materialId } },
+       update: { precio, precioBase210, costoExtraCm },
+       create: { furnitureTypeId, materialId, precio, precioBase210, costoExtraCm },
+       include: { furnitureType: true, material: true },
+     });
++
++    await logCatalogChange({
++      userId: user.userId,
++      modulo: 'PRECIOS',
++      accion: before ? 'EDITAR' : 'CREAR',
++      entidadId: record.id,
++      entidadNombre: `${record.furnitureType?.nombre || ''} × ${record.material?.nombre || ''}`,
++      valorAnterior: before ? { precio: before.precio, precioBase210: before.precioBase210, costoExtraCm: before.costoExtraCm } : null,
++      valorNuevo: { precio: record.precio, precioBase210: record.precioBase210, costoExtraCm: record.costoExtraCm },
++    });
++
+     return NextResponse.json({ ok: true, data: record });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/materials/[id]/route.ts b/src/app/api/catalog/materials/[id]/route.ts
+index caf35fc..2b4c3c7 100644
+--- a/src/app/api/catalog/materials/[id]/route.ts
++++ b/src/app/api/catalog/materials/[id]/route.ts
+@@ -2,13 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (_req, { params }, user) => {
+   try {
++    const material = await prisma.material.findUnique({ where: { id: params.id } });
++    if (!material) throw new AppError('Material no encontrado', 404);
+     const usageCount = await prisma.quotationItem.count({ where: { materialId: params.id } });
+     if (usageCount > 0) throw new AppError(`No se puede eliminar: está usado en ${usageCount} cotización(es)`, 409);
+     await (prisma as any).materialFurniturePrice.deleteMany({ where: { materialId: params.id } });
+     await prisma.material.delete({ where: { id: params.id } });
++
++    await logCatalogChange({
++      userId: user.userId,
++      modulo: 'MATERIALES',
++      accion: 'ELIMINAR',
++      entidadId: material.id,
++      entidadNombre: material.nombre,
++      valorAnterior: material,
++    });
++
+     return NextResponse.json({ ok: true, message: 'Material eliminado' });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/services/[id]/route.ts b/src/app/api/catalog/services/[id]/route.ts
+index b3efab6..619ae51 100644
+--- a/src/app/api/catalog/services/[id]/route.ts
++++ b/src/app/api/catalog/services/[id]/route.ts
+@@ -2,23 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PUT = withAdmin(async (req, { params }) => {
++export const PUT = withAdmin(async (req, { params }, user) => {
+   try {
+     const { nombre, precioBase } = await req.json();
++    const before = await prisma.service.findUnique({ where: { id: params.id } });
++    if (!before) throw new AppError('Servicio no encontrado', 404);
+     const svc = await prisma.service.update({ where: { id: params.id }, data: { nombre, precioBase: Number(precioBase) } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'SERVICIOS', accion: 'EDITAR',
++      entidadId: svc.id, entidadNombre: svc.nombre,
++      valorAnterior: { nombre: before.nombre, precioBase: before.precioBase },
++      valorNuevo: { nombre: svc.nombre, precioBase: svc.precioBase },
++    });
++
+     return NextResponse.json({ ok: true, data: svc });
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (_req, { params }, user) => {
+   try {
++    const svc = await prisma.service.findUnique({ where: { id: params.id } });
++    if (!svc) throw new AppError('Servicio no encontrado', 404);
+     const count = await (prisma as any).quotationService.count({ where: { serviceId: params.id } });
+     if (count === 0) {
+       await prisma.service.delete({ where: { id: params.id } });
++      await logCatalogChange({
++        userId: user.userId, modulo: 'SERVICIOS', accion: 'ELIMINAR',
++        entidadId: svc.id, entidadNombre: svc.nombre, valorAnterior: { precioBase: svc.precioBase },
++      });
+       return NextResponse.json({ ok: true, message: 'Servicio eliminado permanentemente' });
+     }
+     const updated = await prisma.service.update({ where: { id: params.id }, data: { activo: false } });
++    await logCatalogChange({
++      userId: user.userId, modulo: 'SERVICIOS', accion: 'ELIMINAR',
++      entidadId: svc.id, entidadNombre: svc.nombre,
++      valorAnterior: { activo: true }, valorNuevo: { activo: false, motivo: 'usado en cotizaciones, se desactivó en vez de borrar' },
++    });
+     return NextResponse.json({ ok: true, data: updated, message: `Usado en ${count} cotización(es), se desactivó.` });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/services/[id]/toggle/route.ts b/src/app/api/catalog/services/[id]/toggle/route.ts
+index d16b67a..d83cc12 100644
+--- a/src/app/api/catalog/services/[id]/toggle/route.ts
++++ b/src/app/api/catalog/services/[id]/toggle/route.ts
+@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+-export const PATCH = withAdmin(async (_req, { params }) => {
++export const PATCH = withAdmin(async (_req, { params }, user) => {
+   try {
+     const svc = await prisma.service.findUnique({ where: { id: params.id } });
+     if (!svc) throw new AppError('Servicio no encontrado', 404);
+     const updated = await prisma.service.update({ where: { id: params.id }, data: { activo: !svc.activo } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'SERVICIOS', accion: 'EDITAR',
++      entidadId: svc.id, entidadNombre: svc.nombre,
++      valorAnterior: { activo: svc.activo }, valorNuevo: { activo: updated.activo },
++    });
++
+     return NextResponse.json({ ok: true, data: updated });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/catalog/services/route.ts b/src/app/api/catalog/services/route.ts
+index f3fee0b..7296fb8 100644
+--- a/src/app/api/catalog/services/route.ts
++++ b/src/app/api/catalog/services/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logCatalogChange } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+   try {
+@@ -10,11 +11,17 @@ export const GET = withAuth(async () => {
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+     const { nombre, precioBase } = await req.json();
+     if (!nombre) throw new AppError('nombre es requerido', 400);
+     const svc = await prisma.service.create({ data: { nombre, precioBase: Number(precioBase) } });
++
++    await logCatalogChange({
++      userId: user.userId, modulo: 'SERVICIOS', accion: 'CREAR',
++      entidadId: svc.id, entidadNombre: svc.nombre, valorNuevo: { precioBase: svc.precioBase },
++    });
++
+     return NextResponse.json({ ok: true, data: svc }, { status: 201 });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/cron/check-breaks/route.ts b/src/app/api/cron/check-breaks/route.ts
+new file mode 100644
+index 0000000..45c9520
+--- /dev/null
++++ b/src/app/api/cron/check-breaks/route.ts
+@@ -0,0 +1,67 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { handleError } from '@/lib/errors';
++import { getMinutosPermitidos, diffMinutes, BREAK_FIELDS } from '@/lib/timesheet-helpers';
++import { sendPushToUser } from '@/lib/push';
++
++// Esta ruta NO usa withAuth/withAdmin (no la llama un usuario logueado en
++// el navegador) — la protege un secreto compartido (CRON_SECRET), que debe
++// configurarse igual en el scheduler externo (Supabase pg_cron + pg_net,
++// o Vercel Cron) y en las variables de entorno de este proyecto.
++function isAuthorized(req: NextRequest) {
++  const secret = process.env.CRON_SECRET;
++  if (!secret) return false; // si no está configurado, no se ejecuta nada (fail-safe)
++  const header = req.headers.get('authorization');
++  return header === `Bearer ${secret}`;
++}
++
++const TIPO_LABEL: Record<string, string> = { DESAYUNO: 'Desayuno', ALMUERZO: 'Almuerzo', CAFE: 'Café' };
++
++export async function POST(req: NextRequest) {
++  try {
++    if (!isAuthorized(req)) {
++      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 });
++    }
++
++    const minutosPermitidos = await getMinutosPermitidos();
++
++    // Solo jornadas abiertas (sin salida) pueden tener un descanso en curso.
++    const entries = await (prisma as any).timesheetEntry.findMany({
++      where: { horaSalida: null, archivado: false },
++    });
++
++    let alertsSent = 0;
++
++    for (const entry of entries) {
++      for (const [key, fields] of Object.entries(BREAK_FIELDS)) {
++        const tipo = key.toUpperCase(); // desayuno -> DESAYUNO, etc.
++        const start = entry[fields.start];
++        const end = entry[fields.end];
++        if (!start || end) continue; // no está en ese descanso ahora mismo
++
++        const minutos = diffMinutes(new Date(start), new Date());
++        const permitido = minutosPermitidos[tipo] ?? 0;
++        if (minutos < permitido) continue;
++
++        // Intenta registrar la alerta; si ya existe (unique constraint), no reenvía.
++        try {
++          await (prisma as any).pushAlertLog.create({
++            data: { timesheetEntryId: entry.id, tipo },
++          });
++        } catch {
++          continue; // ya se había notificado para este descanso
++        }
++
++        await sendPushToUser(entry.userId, {
++          title: `🚨 ${TIPO_LABEL[tipo] || tipo} terminó`,
++          body: 'Regresa a la app y marca "Finalizar descanso".',
++          tag: `break-${tipo}`,
++          url: '/horario',
++        });
++        alertsSent++;
++      }
++    }
++
++    return NextResponse.json({ ok: true, checked: entries.length, alertsSent });
++  } catch (e) { return handleError(e); }
++}
+diff --git a/src/app/api/inventory/[id]/adjust/route.ts b/src/app/api/inventory/[id]/adjust/route.ts
+index 297ef56..c33caec 100644
+--- a/src/app/api/inventory/[id]/adjust/route.ts
++++ b/src/app/api/inventory/[id]/adjust/route.ts
+@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logInventoryMovement } from '@/lib/audit';
+ 
+-export const POST = withAuth(async (req, { params }) => {
++export const POST = withAuth(async (req, { params }, user) => {
+   try {
+     const { cantidad, operacion, motivo } = await req.json();
+     const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
+@@ -15,6 +16,16 @@ export const POST = withAuth(async (req, { params }) => {
+           : stockActual - Number(cantidad);
+     if (newStock < 0) throw new AppError('Stock insuficiente', 400);
+     const updated = await prisma.inventoryItem.update({ where: { id: params.id }, data: { stockActual: newStock } });
++
++    await logInventoryMovement({
++      userId: user.userId,
++      itemId: item.id,
++      itemNombre: item.nombre,
++      tipoMovimiento: operacion,
++      cantidad: Number(cantidad),
++      detalle: { motivo: motivo || null, stockAnterior: stockActual, stockNuevo: newStock },
++    });
++
+     return NextResponse.json({ ok: true, data: updated });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/inventory/[id]/route.ts b/src/app/api/inventory/[id]/route.ts
+new file mode 100644
+index 0000000..8fb8caa
+--- /dev/null
++++ b/src/app/api/inventory/[id]/route.ts
+@@ -0,0 +1,60 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withAdmin } from '@/lib/auth';
++import { handleError, AppError } from '@/lib/errors';
++import { logInventoryMovement } from '@/lib/audit';
++
++// Editar datos del elemento de inventario (nombre, categoría, unidad de medida).
++// El stock se sigue ajustando por separado vía /stock y /adjust.
++// Protegido con withAdmin: la verificación de rol ocurre en el backend,
++// no depende de que el botón esté oculto en el frontend.
++export const PATCH = withAdmin(async (req, { params }, user) => {
++  try {
++    const { nombre, categoria, unidadMedida } = await req.json();
++
++    if (nombre !== undefined && !nombre.trim()) {
++      throw new AppError('El nombre no puede estar vacío', 400);
++    }
++
++    const before = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
++    if (!before) throw new AppError('Elemento no encontrado', 404);
++
++    const item = await prisma.inventoryItem.update({
++      where: { id: params.id },
++      data: {
++        ...(nombre !== undefined ? { nombre: nombre.trim() } : {}),
++        ...(categoria !== undefined ? { categoria } : {}),
++        ...(unidadMedida !== undefined ? { unidadMedida } : {}),
++      },
++    });
++
++    await logInventoryMovement({
++      userId: user.userId,
++      itemId: item.id,
++      itemNombre: item.nombre,
++      tipoMovimiento: 'EDITAR',
++      detalle: { antes: { nombre: before.nombre, categoria: before.categoria, unidadMedida: before.unidadMedida }, despues: { nombre: item.nombre, categoria: item.categoria, unidadMedida: item.unidadMedida } },
++    });
++
++    return NextResponse.json({ ok: true, data: item });
++  } catch (e) { return handleError(e); }
++});
++
++export const DELETE = withAdmin(async (_req, { params }, user) => {
++  try {
++    const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
++    if (!item) throw new AppError('Elemento no encontrado', 404);
++
++    await prisma.inventoryItem.delete({ where: { id: params.id } });
++
++    await logInventoryMovement({
++      userId: user.userId,
++      itemId: item.id,
++      itemNombre: item.nombre,
++      tipoMovimiento: 'ELIMINAR',
++      detalle: { stockActual: item.stockActual, categoria: item.categoria },
++    });
++
++    return NextResponse.json({ ok: true, message: 'Elemento eliminado' });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/inventory/route.ts b/src/app/api/inventory/route.ts
+index 89743c2..68d0638 100644
+--- a/src/app/api/inventory/route.ts
++++ b/src/app/api/inventory/route.ts
+@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAuth, withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { logInventoryMovement } from '@/lib/audit';
+ 
+ export const GET = withAuth(async () => {
+     try {
+@@ -25,7 +26,7 @@ export const GET = withAuth(async () => {
+     }
+ });
+ 
+-export const POST = withAdmin(async (req) => {
++export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+       const {
+           nombre,
+@@ -48,6 +49,15 @@ export const POST = withAdmin(async (req) => {
+               stockMinimo: Number(stockMinimo) || 0,
+           },
+       });
++
++      await logInventoryMovement({
++        userId: user.userId,
++        itemId: item.id,
++        itemNombre: item.nombre,
++        tipoMovimiento: 'CREAR',
++        detalle: { stockActual: item.stockActual, stockMinimo: item.stockMinimo },
++      });
++
+     return NextResponse.json({ ok: true, data: item }, { status: 201 });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/payments/[id]/receipt-files/route.ts b/src/app/api/payments/[id]/receipt-files/route.ts
+new file mode 100644
+index 0000000..dcc9398
+--- /dev/null
++++ b/src/app/api/payments/[id]/receipt-files/route.ts
+@@ -0,0 +1,87 @@
++import { NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withBlockTrabajador } from '@/lib/auth';
++import { handleError, AppError } from '@/lib/errors';
++import { supabaseAdmin } from '@/lib/supabase';
++import {
++  ensureReceiptsBucket,
++  isAllowedReceiptFile,
++  PAYMENT_RECEIPTS_BUCKET,
++  RECEIPT_ALLOWED_TYPES_LABEL,
++  RECEIPT_MAX_SIZE_MB,
++} from '@/lib/payment-receipts-storage';
++
++// Firma cada URL bajo demanda (bucket privado, sin URLs públicas) con
++// vencimiento corto — no se guardan URLs firmadas en la base de datos.
++const SIGNED_URL_TTL_SECONDS = 60 * 5;
++
++export const GET = withBlockTrabajador(async (_req, { params }) => {
++  try {
++    const files = await (prisma as any).paymentReceiptFile.findMany({
++      where: { paymentId: params.id },
++      orderBy: { createdAt: 'desc' },
++    });
++
++    const withUrls = await Promise.all(
++      files.map(async (f: any) => {
++        const { data } = await supabaseAdmin.storage
++          .from(PAYMENT_RECEIPTS_BUCKET)
++          .createSignedUrl(f.storagePath, SIGNED_URL_TTL_SECONDS);
++        return { ...f, url: data?.signedUrl || null };
++      })
++    );
++
++    return NextResponse.json({ ok: true, data: withUrls });
++  } catch (e) { return handleError(e); }
++});
++
++export const POST = withBlockTrabajador(async (req, { params }, user) => {
++  try {
++    const payment = await (prisma as any).payment.findUnique({
++      where: { id: params.id },
++      include: { project: { select: { clientId: true } } },
++    });
++    if (!payment) throw new AppError('Pago no encontrado', 404);
++
++    const formData = await req.formData();
++    const file = formData.get('archivo') as File | null;
++    if (!file) throw new AppError('No se recibió archivo', 400);
++
++    if (!isAllowedReceiptFile(file)) {
++      throw new AppError(
++        `Archivo inválido. Solo se aceptan imágenes (${RECEIPT_ALLOWED_TYPES_LABEL}) de hasta ${RECEIPT_MAX_SIZE_MB}MB`,
++        400
++      );
++    }
++
++    await ensureReceiptsBucket();
++
++    const extension = file.name.split('.').pop();
++    const storagePath = `${params.id}/${Date.now()}.${extension}`;
++
++    const { error: uploadError } = await supabaseAdmin.storage
++      .from(PAYMENT_RECEIPTS_BUCKET)
++      .upload(storagePath, Buffer.from(await file.arrayBuffer()), {
++        contentType: file.type,
++        upsert: false,
++      });
++    if (uploadError) throw uploadError;
++
++    const receiptFile = await (prisma as any).paymentReceiptFile.create({
++      data: {
++        paymentId: params.id,
++        clientId: payment.project?.clientId || null,
++        storagePath,
++        nombreArchivo: file.name,
++        mimeType: file.type,
++        subidoPor: user.userId,
++      },
++    });
++
++    const { data: signed } = await supabaseAdmin.storage
++      .from(PAYMENT_RECEIPTS_BUCKET)
++      .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
++
++    return NextResponse.json({ ok: true, data: { ...receiptFile, url: signed?.signedUrl || null } }, { status: 201 });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/payments/[id]/route.ts b/src/app/api/payments/[id]/route.ts
+index 905b9d7..88f5133 100644
+--- a/src/app/api/payments/[id]/route.ts
++++ b/src/app/api/payments/[id]/route.ts
+@@ -2,6 +2,8 @@
+ import { prisma } from '@/lib/prisma';
+ import { withBlockTrabajador } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
++import { supabaseAdmin } from '@/lib/supabase';
++import { PAYMENT_RECEIPTS_BUCKET } from '@/lib/payment-receipts-storage';
+ 
+ export const DELETE = withBlockTrabajador(async (_req, { params }) => {
+     try {
+@@ -12,6 +14,7 @@ export const DELETE = withBlockTrabajador(async (_req, { params }) => {
+             },
+             include: {
+                 receipt: true,
++                receiptFiles: true,
+             },
+         });
+ 
+@@ -28,6 +31,15 @@ export const DELETE = withBlockTrabajador(async (_req, { params }) => {
+             });
+         }
+ 
++        // Eliminar del bucket los archivos de respaldo del comprobante
++        // (las filas de PaymentReceiptFile se eliminan solas por el
++        // onDelete: Cascade del schema, pero los objetos en Storage no).
++        if (payment.receiptFiles.length > 0) {
++            await supabaseAdmin.storage
++                .from(PAYMENT_RECEIPTS_BUCKET)
++                .remove(payment.receiptFiles.map((f) => f.storagePath));
++        }
++
+         // Luego eliminar el pago
+         await prisma.payment.delete({
+             where: {
+diff --git a/src/app/api/payments/receipt-files/[fileId]/route.ts b/src/app/api/payments/receipt-files/[fileId]/route.ts
+new file mode 100644
+index 0000000..010e5d7
+--- /dev/null
++++ b/src/app/api/payments/receipt-files/[fileId]/route.ts
+@@ -0,0 +1,18 @@
++import { NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withBlockTrabajador } from '@/lib/auth';
++import { handleError, AppError } from '@/lib/errors';
++import { supabaseAdmin } from '@/lib/supabase';
++import { PAYMENT_RECEIPTS_BUCKET } from '@/lib/payment-receipts-storage';
++
++export const DELETE = withBlockTrabajador(async (_req, { params }) => {
++  try {
++    const file = await (prisma as any).paymentReceiptFile.findUnique({ where: { id: params.fileId } });
++    if (!file) throw new AppError('Archivo no encontrado', 404);
++
++    await supabaseAdmin.storage.from(PAYMENT_RECEIPTS_BUCKET).remove([file.storagePath]);
++    await (prisma as any).paymentReceiptFile.delete({ where: { id: params.fileId } });
++
++    return NextResponse.json({ ok: true, message: 'Archivo eliminado' });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/projects/[id]/payments/route.ts b/src/app/api/projects/[id]/payments/route.ts
+index b71a60c..43cc1ba 100644
+--- a/src/app/api/projects/[id]/payments/route.ts
++++ b/src/app/api/projects/[id]/payments/route.ts
+@@ -20,6 +20,7 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
+             },
+             include: {
+                 receipt: true,
++                _count: { select: { receiptFiles: true } },
+             },
+             orderBy: {
+                 fechaPago: 'desc',
+diff --git a/src/app/api/push/subscribe/route.ts b/src/app/api/push/subscribe/route.ts
+new file mode 100644
+index 0000000..f40fe3f
+--- /dev/null
++++ b/src/app/api/push/subscribe/route.ts
+@@ -0,0 +1,31 @@
++import { NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withAuth } from '@/lib/auth';
++import { handleError, AppError } from '@/lib/errors';
++
++export const POST = withAuth(async (req, _ctx, user) => {
++  try {
++    const { endpoint, keys } = await req.json();
++    if (!endpoint || !keys?.p256dh || !keys?.auth) {
++      throw new AppError('Suscripción push inválida', 400);
++    }
++
++    const subscription = await (prisma as any).pushSubscription.upsert({
++      where: { endpoint },
++      update: { userId: user.userId, p256dh: keys.p256dh, auth: keys.auth },
++      create: { userId: user.userId, endpoint, p256dh: keys.p256dh, auth: keys.auth },
++    });
++
++    return NextResponse.json({ ok: true, data: subscription });
++  } catch (e) { return handleError(e); }
++});
++
++export const DELETE = withAuth(async (req) => {
++  try {
++    const { endpoint } = await req.json();
++    if (!endpoint) throw new AppError('endpoint requerido', 400);
++
++    await (prisma as any).pushSubscription.deleteMany({ where: { endpoint } });
++    return NextResponse.json({ ok: true, message: 'Suscripción eliminada' });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/timesheet/close-week/route.ts b/src/app/api/timesheet/close-week/route.ts
+index dbb527b..98971b4 100644
+--- a/src/app/api/timesheet/close-week/route.ts
++++ b/src/app/api/timesheet/close-week/route.ts
+@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
+-import { startOfWeek, endOfWeek, endOfDay } from '@/lib/timesheet-helpers';
++import { startOfWeek, endOfWeek, endOfDay, calcularSalario, getUmbralHoras } from '@/lib/timesheet-helpers';
+ 
+ export const POST = withAdmin(async (req, _ctx, user) => {
+   try {
+@@ -22,16 +22,27 @@ export const POST = withAdmin(async (req, _ctx, user) => {
+     const byUser: Record<string, any[]> = {};
+     for (const e of entries) { if (!byUser[e.userId]) byUser[e.userId] = []; byUser[e.userId].push(e); }
+     const wageConfigs = await (prisma as any).userWageConfig.findMany({});
+-    const wageMap: Record<string, number> = {};
+-    for (const w of wageConfigs) wageMap[w.userId] = Number(w.tarifaHora);
++    const wageMap: Record<string, { tarifaHora: number; tarifaHoraExceso: number | null }> = {};
++    for (const w of wageConfigs) wageMap[w.userId] = { tarifaHora: Number(w.tarifaHora), tarifaHoraExceso: w.tarifaHoraExceso != null ? Number(w.tarifaHoraExceso) : null };
++    const umbralHoras = await getUmbralHoras();
+     const summaries: any[] = [];
+     await prisma.$transaction(async (tx: any) => {
+       for (const [userId, userEntries] of Object.entries(byUser)) {
+         const totalHoras = (userEntries as any[]).reduce((acc, e) => acc + Number(e.horasTrabajadas || 0), 0);
+-        const tarifaHora = wageMap[userId] ?? null;
+-        const salarioTotal = tarifaHora ? Number((totalHoras * tarifaHora).toFixed(2)) : null;
++        const wage = wageMap[userId];
++        const salarioTotal = wage ? calcularSalario(totalHoras, wage.tarifaHora, wage.tarifaHoraExceso, umbralHoras) : null;
+         const summary = await tx.weeklyTimesheetSummary.create({
+-          data: { userId, semanaInicio: rangeStart, semanaFin: rangeEnd, totalHoras: Number(totalHoras.toFixed(2)), tarifaHora, salarioTotal, cantidadDias: (userEntries as any[]).length, generadoPor: user.userId },
++          data: {
++            userId,
++            semanaInicio: rangeStart,
++            semanaFin: rangeEnd,
++            totalHoras: Number(totalHoras.toFixed(2)),
++            tarifaHora: wage?.tarifaHora ?? null,
++            tarifaHoraExceso: wage?.tarifaHoraExceso ?? null,
++            salarioTotal,
++            cantidadDias: (userEntries as any[]).length,
++            generadoPor: user.userId,
++          },
+           include: { user: { select: { nombre: true } } },
+         });
+         summaries.push(summary);
+diff --git a/src/app/api/timesheet/entry/[id]/route.ts b/src/app/api/timesheet/entry/[id]/route.ts
+index 037dd72..3056b30 100644
+--- a/src/app/api/timesheet/entry/[id]/route.ts
++++ b/src/app/api/timesheet/entry/[id]/route.ts
+@@ -3,10 +3,13 @@ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError, AppError } from '@/lib/errors';
+ import { calcularHorasPagas, getMinutosPermitidos } from '@/lib/timesheet-helpers';
++import { logTimesheetCorrection } from '@/lib/audit';
+ 
+-export const PUT = withAdmin(async (req, { params }) => {
++const CAMPOS_AUDITABLES = ['horaEntrada', 'horaSalida', 'desayunoInicio', 'desayunoFin', 'almuerzoInicio', 'almuerzoFin', 'cafeInicio', 'cafeFin', 'observaciones'] as const;
++
++export const PUT = withAdmin(async (req, { params }, user) => {
+   try {
+-    const { horaEntrada, horaSalida, observaciones, desayunoInicio, desayunoFin, almuerzoInicio, almuerzoFin, cafeInicio, cafeFin } = await req.json();
++    const { horaEntrada, horaSalida, observaciones, desayunoInicio, desayunoFin, almuerzoInicio, almuerzoFin, cafeInicio, cafeFin, motivo } = await req.json();
+     const entry = await (prisma as any).timesheetEntry.findUnique({ where: { id: params.id } });
+     if (!entry) throw new AppError('Registro no encontrado', 404);
+     if (entry.archivado) throw new AppError('No se puede editar un registro archivado', 409);
+@@ -29,16 +32,48 @@ export const PUT = withAdmin(async (req, { params }) => {
+       horasTrabajadas = calc.horas; minutosExcedentes = calc.minutosExcedentes;
+     }
+     const updated = await (prisma as any).timesheetEntry.update({ where: { id: params.id }, data: { ...data, horasTrabajadas, minutosExcedentes } });
++
++    // Bitácora: una fila por cada campo que realmente cambió, para trazabilidad
++    // clara de qué corrigió el admin (no solo que "editó" el registro).
++    for (const campo of CAMPOS_AUDITABLES) {
++      const antes = entry[campo] instanceof Date ? entry[campo].toISOString() : (entry[campo] ?? null);
++      const despues = (updated as any)[campo] instanceof Date ? (updated as any)[campo].toISOString() : ((updated as any)[campo] ?? null);
++      if (String(antes) !== String(despues)) {
++        await logTimesheetCorrection({
++          adminId: user.userId,
++          trabajadorId: entry.userId,
++          timesheetEntryId: entry.id,
++          campo,
++          valorAnterior: antes,
++          valorNuevo: despues,
++          motivo: motivo || null,
++        });
++      }
++    }
++
+     return NextResponse.json({ ok: true, data: updated });
+   } catch (e) { return handleError(e); }
+ });
+ 
+-export const DELETE = withAdmin(async (_req, { params }) => {
++export const DELETE = withAdmin(async (req, { params }, user) => {
+   try {
+     const entry = await (prisma as any).timesheetEntry.findUnique({ where: { id: params.id } });
+     if (!entry) throw new AppError('Registro no encontrado', 404);
+     if (entry.archivado) throw new AppError('No se puede eliminar un registro archivado', 409);
++    const { motivo } = await req.json().catch(() => ({ motivo: null }));
++
+     await (prisma as any).timesheetEntry.delete({ where: { id: params.id } });
++
++    await logTimesheetCorrection({
++      adminId: user.userId,
++      trabajadorId: entry.userId,
++      timesheetEntryId: entry.id,
++      campo: 'REGISTRO_ELIMINADO',
++      valorAnterior: JSON.stringify({ fecha: entry.fecha, horaEntrada: entry.horaEntrada, horaSalida: entry.horaSalida }),
++      valorNuevo: null,
++      motivo: motivo || null,
++    });
++
+     return NextResponse.json({ ok: true, message: 'Registro eliminado' });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/timesheet/report/route.ts b/src/app/api/timesheet/report/route.ts
+index 518bba8..f78e0f3 100644
+--- a/src/app/api/timesheet/report/route.ts
++++ b/src/app/api/timesheet/report/route.ts
+@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { withAdmin } from '@/lib/auth';
+ import { handleError } from '@/lib/errors';
+-import { startOfWeek, endOfWeek, endOfDay } from '@/lib/timesheet-helpers';
++import { startOfWeek, endOfWeek, endOfDay, calcularSalario, getUmbralHoras } from '@/lib/timesheet-helpers';
+ 
+ export const GET = withAdmin(async (req) => {
+   try {
+@@ -28,15 +28,21 @@ export const GET = withAdmin(async (req) => {
+       byUser[uid].totalExcedente += Number(e.minutosExcedentes || 0);
+     }
+     const wageConfigs = await (prisma as any).userWageConfig.findMany({ where: filterUser ? { userId: filterUser } : {} });
+-    const wageMap: Record<string, number> = {};
+-    for (const w of wageConfigs) wageMap[w.userId] = Number(w.tarifaHora);
+-    const result = Object.values(byUser).map((u: any) => ({
+-      ...u,
+-      totalHoras: Number(u.totalHoras.toFixed(2)),
+-      totalExcedente: Math.round(u.totalExcedente),
+-      tarifaHora: wageMap[u.user.id] ?? null,
+-      salarioCalculado: wageMap[u.user.id] ? Number((u.totalHoras * wageMap[u.user.id]).toFixed(2)) : null,
+-    }));
++    const wageMap: Record<string, { tarifaHora: number; tarifaHoraExceso: number | null }> = {};
++    for (const w of wageConfigs) wageMap[w.userId] = { tarifaHora: Number(w.tarifaHora), tarifaHoraExceso: w.tarifaHoraExceso != null ? Number(w.tarifaHoraExceso) : null };
++    const umbralHoras = await getUmbralHoras();
++    const result = Object.values(byUser).map((u: any) => {
++      const wage = wageMap[u.user.id];
++      return {
++        ...u,
++        totalHoras: Number(u.totalHoras.toFixed(2)),
++        totalExcedente: Math.round(u.totalExcedente),
++        tarifaHora: wage?.tarifaHora ?? null,
++        tarifaHoraExceso: wage?.tarifaHoraExceso ?? null,
++        umbralHoras,
++        salarioCalculado: wage ? calcularSalario(u.totalHoras, wage.tarifaHora, wage.tarifaHoraExceso, umbralHoras) : null,
++      };
++    });
+     return NextResponse.json({ ok: true, data: result, meta: { rangeStart: rangeStart.toISOString(), rangeEnd: rangeEnd.toISOString() } });
+   } catch (e) { return handleError(e); }
+ });
+diff --git a/src/app/api/timesheet/wage-threshold/route.ts b/src/app/api/timesheet/wage-threshold/route.ts
+new file mode 100644
+index 0000000..56dfb2d
+--- /dev/null
++++ b/src/app/api/timesheet/wage-threshold/route.ts
+@@ -0,0 +1,26 @@
++import { NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import { withAuth, withAdmin } from '@/lib/auth';
++import { handleError, AppError } from '@/lib/errors';
++import { getUmbralHoras } from '@/lib/timesheet-helpers';
++
++export const GET = withAuth(async () => {
++  try {
++    const umbralHoras = await getUmbralHoras();
++    return NextResponse.json({ ok: true, data: { umbralHoras } });
++  } catch (e) { return handleError(e); }
++});
++
++export const PUT = withAdmin(async (req) => {
++  try {
++    const { umbralHoras } = await req.json();
++    if (!umbralHoras || isNaN(Number(umbralHoras)) || Number(umbralHoras) <= 0) {
++      throw new AppError('umbralHoras debe ser un número mayor a 0', 400);
++    }
++    const existing = await (prisma as any).wageThreshold.findFirst();
++    const config = existing
++      ? await (prisma as any).wageThreshold.update({ where: { id: existing.id }, data: { umbralHoras: Number(umbralHoras) } })
++      : await (prisma as any).wageThreshold.create({ data: { umbralHoras: Number(umbralHoras) } });
++    return NextResponse.json({ ok: true, data: { umbralHoras: config.umbralHoras }, message: 'Umbral actualizado' });
++  } catch (e) { return handleError(e); }
++});
+diff --git a/src/app/api/timesheet/wage/[userId]/route.ts b/src/app/api/timesheet/wage/[userId]/route.ts
+index f4b68e4..2085995 100644
+--- a/src/app/api/timesheet/wage/[userId]/route.ts
++++ b/src/app/api/timesheet/wage/[userId]/route.ts
+@@ -5,12 +5,18 @@ import { handleError, AppError } from '@/lib/errors';
+ 
+ export const PUT = withAdmin(async (req, { params }) => {
+   try {
+-    const { tarifaHora } = await req.json();
++    const { tarifaHora, tarifaHoraExceso } = await req.json();
+     if (!tarifaHora || isNaN(Number(tarifaHora))) throw new AppError('tarifaHora debe ser un número', 400);
++    if (tarifaHoraExceso !== undefined && tarifaHoraExceso !== null && tarifaHoraExceso !== '' && isNaN(Number(tarifaHoraExceso))) {
++      throw new AppError('tarifaHoraExceso debe ser un número', 400);
++    }
++    const dataExceso = tarifaHoraExceso === undefined || tarifaHoraExceso === null || tarifaHoraExceso === ''
++      ? null
++      : Number(tarifaHoraExceso);
+     const config = await (prisma as any).userWageConfig.upsert({
+       where: { userId: params.userId },
+-      update: { tarifaHora: Number(tarifaHora) },
+-      create: { userId: params.userId, tarifaHora: Number(tarifaHora) },
++      update: { tarifaHora: Number(tarifaHora), tarifaHoraExceso: dataExceso },
++      create: { userId: params.userId, tarifaHora: Number(tarifaHora), tarifaHoraExceso: dataExceso },
+     });
+     return NextResponse.json({ ok: true, data: config });
+   } catch (e) { return handleError(e); }
+diff --git a/src/components/layout/AppLayout.tsx b/src/components/layout/AppLayout.tsx
+index 9c36381..c8ce0f5 100644
+--- a/src/components/layout/AppLayout.tsx
++++ b/src/components/layout/AppLayout.tsx
+@@ -18,6 +18,7 @@ import {
+     X,
+     Calendar,
+     Clock,
++    ScrollText,
+ } from 'lucide-react';
+ import { useAuthStore } from '@/store/auth.store';
+ import AuthGuard from '@/components/AuthGuard';
+@@ -37,6 +38,7 @@ const NAV = [
+ const NAV_ADMIN = [
+     { to: '/usuarios', icon: Users, label: 'Usuarios' },
+     { to: '/catalogo', icon: Settings, label: 'Catálogo & Precios' },
++    { to: '/bitacoras', icon: ScrollText, label: 'Bitácoras' },
+ ];
+ 
+ export default function AppLayout({
+diff --git a/src/components/pages/bitacoras/AuditLogsPage.tsx b/src/components/pages/bitacoras/AuditLogsPage.tsx
+new file mode 100644
+index 0000000..6ad3d99
+--- /dev/null
++++ b/src/components/pages/bitacoras/AuditLogsPage.tsx
+@@ -0,0 +1,134 @@
++'use client';
++import { useEffect, useState } from 'react';
++import { ScrollText } from 'lucide-react';
++import { auditApi, usersApi } from '@/lib/api';
++import { PageLoader, EmptyState } from '@/components/ui';
++
++function formatDateTime(iso: string): string {
++  return new Date(iso).toLocaleString('es-CR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
++}
++
++const TABS = [
++  { id: 'catalogo', label: 'Catálogo y precios' },
++  { id: 'inventario', label: 'Inventario' },
++  { id: 'horario', label: 'Correcciones de horario' },
++] as const;
++
++export default function AuditLogsPage() {
++  const [tab, setTab] = useState<typeof TABS[number]['id']>('catalogo');
++  const [logs, setLogs] = useState<any[]>([]);
++  const [users, setUsers] = useState<any[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [userId, setUserId] = useState('');
++  const [desde, setDesde] = useState('');
++  const [hasta, setHasta] = useState('');
++
++  const load = () => {
++    setLoading(true);
++    auditApi.list(tab, { userId: userId || undefined, desde: desde || undefined, hasta: hasta || undefined })
++      .then(setLogs)
++      .finally(() => setLoading(false));
++  };
++
++  useEffect(() => { usersApi.list().then(setUsers).catch(() => {}); }, []);
++  useEffect(() => { load(); }, [tab, userId, desde, hasta]);
++
++  return (
++    <div className="space-y-5">
++      <div className="page-header">
++        <h1 className="page-title flex items-center gap-2">
++          <ScrollText size={22} className="text-wood-500" /> Bitácoras
++        </h1>
++        <p className="text-sm text-slate-500">Trazabilidad de acciones realizadas por los usuarios del ERP</p>
++      </div>
++
++      <div className="flex gap-1 border-b overflow-x-auto">
++        {TABS.map((t) => (
++          <button key={t.id} onClick={() => setTab(t.id)}
++            className={`px-4 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
++              tab === t.id ? 'border-wood-500 text-wood-600' : 'border-transparent text-slate-500 hover:text-slate-700'
++            }`}>
++            {t.label}
++          </button>
++        ))}
++      </div>
++
++      <div className="card card-body">
++        <div className="flex flex-wrap gap-3">
++          <select className="input py-1.5 text-sm w-56" value={userId} onChange={(e) => setUserId(e.target.value)}>
++            <option value="">Todos los usuarios</option>
++            {users.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
++          </select>
++          <input type="date" className="input py-1.5 text-sm" value={desde} onChange={(e) => setDesde(e.target.value)} />
++          <input type="date" className="input py-1.5 text-sm" value={hasta} onChange={(e) => setHasta(e.target.value)} />
++        </div>
++      </div>
++
++      {loading ? <PageLoader /> : logs.length === 0 ? (
++        <EmptyState icon={<ScrollText size={24} />} title="Sin movimientos registrados" />
++      ) : (
++        <div className="card table-wrap">
++          <table className="table">
++            {tab === 'catalogo' && (
++              <>
++                <thead><tr><th>Fecha</th><th>Usuario</th><th>Módulo</th><th>Acción</th><th>Elemento</th><th>Cambio</th></tr></thead>
++                <tbody>
++                  {logs.map((l) => (
++                    <tr key={l.id}>
++                      <td className="whitespace-nowrap">{formatDateTime(l.createdAt)}</td>
++                      <td>{l.user?.nombre || '—'}</td>
++                      <td>{l.modulo}</td>
++                      <td>{l.accion}</td>
++                      <td>{l.entidadNombre || '—'}</td>
++                      <td className="text-xs text-slate-500 max-w-xs">
++                        {l.valorAnterior ? <div>Antes: {JSON.stringify(l.valorAnterior)}</div> : null}
++                        {l.valorNuevo ? <div>Después: {JSON.stringify(l.valorNuevo)}</div> : null}
++                      </td>
++                    </tr>
++                  ))}
++                </tbody>
++              </>
++            )}
++
++            {tab === 'inventario' && (
++              <>
++                <thead><tr><th>Fecha</th><th>Usuario</th><th>Elemento</th><th>Movimiento</th><th>Cantidad</th><th>Detalle</th></tr></thead>
++                <tbody>
++                  {logs.map((l) => (
++                    <tr key={l.id}>
++                      <td className="whitespace-nowrap">{formatDateTime(l.createdAt)}</td>
++                      <td>{l.user?.nombre || '—'}</td>
++                      <td>{l.itemNombre}</td>
++                      <td>{l.tipoMovimiento}</td>
++                      <td>{l.cantidad ?? '—'}</td>
++                      <td className="text-xs text-slate-500 max-w-xs">{l.detalle ? JSON.stringify(l.detalle) : '—'}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </>
++            )}
++
++            {tab === 'horario' && (
++              <>
++                <thead><tr><th>Fecha</th><th>Admin</th><th>Trabajador</th><th>Campo</th><th>Antes</th><th>Después</th><th>Motivo</th></tr></thead>
++                <tbody>
++                  {logs.map((l) => (
++                    <tr key={l.id}>
++                      <td className="whitespace-nowrap">{formatDateTime(l.createdAt)}</td>
++                      <td>{l.admin?.nombre || '—'}</td>
++                      <td>{l.trabajador?.nombre || '—'}</td>
++                      <td>{l.campo}</td>
++                      <td className="text-xs text-slate-500">{l.valorAnterior || '—'}</td>
++                      <td className="text-xs text-slate-500">{l.valorNuevo || '—'}</td>
++                      <td className="text-xs text-slate-500">{l.motivo || '—'}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </>
++            )}
++          </table>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/pages/clientes/ClientDetailPage.tsx b/src/components/pages/clientes/ClientDetailPage.tsx
+index 9dae3dd..1786631 100644
+--- a/src/components/pages/clientes/ClientDetailPage.tsx
++++ b/src/components/pages/clientes/ClientDetailPage.tsx
+@@ -119,12 +119,16 @@ export default function ClientDetailPage({ id }: { id: string }) {
+                 </tr>
+               ) : (
+                 client.projects.map((p) => (
+-                  <tr key={p.id}>
++                  <tr
++                    key={p.id}
++                    onClick={() => router.push(`/proyectos/${p.id}`)}
++                    className="cursor-pointer hover:bg-slate-50"
++                  >
+                     <td className="font-semibold text-slate-900">{p.nombreProyecto}</td>
+                     <td>{p.ubicacion || '—'}</td>
+                     <td><ProjectBadge status={p.estado} /></td>
+                     <td>{formatDate(p.fechaInstalacionTentativa)}</td>
+-                    <td>
++                    <td onClick={(e) => e.stopPropagation()}>
+                       <Link href={`/proyectos/${p.id}`} className="btn-ghost btn-sm">Ver</Link>
+                     </td>
+                   </tr>
+diff --git a/src/components/pages/clientes/ClientsPage.tsx b/src/components/pages/clientes/ClientsPage.tsx
+index a0fc750..cbd43cc 100644
+--- a/src/components/pages/clientes/ClientsPage.tsx
++++ b/src/components/pages/clientes/ClientsPage.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ import { useEffect, useState } from 'react';
+ import Link from 'next/link';
++import { useRouter } from 'next/navigation';
+ import { useForm } from 'react-hook-form';
+ import { zodResolver } from '@hookform/resolvers/zod';
+ import { z } from 'zod';
+@@ -20,6 +21,7 @@ const schema = z.object({
+ type Form = z.infer<typeof schema>;
+ 
+ export default function ClientsPage() {
++  const router = useRouter();
+   const [clients, setClients] = useState<Client[]>([]);
+   const [filtered, setFiltered] = useState<Client[]>([]);
+   const [loading, setLoading] = useState(true);
+@@ -138,14 +140,18 @@ export default function ClientsPage() {
+                 </tr>
+               ) : (
+                 filtered.map((c) => (
+-                  <tr key={c.id}>
++                  <tr
++                    key={c.id}
++                    onClick={() => router.push(`/clientes/${c.id}`)}
++                    className="cursor-pointer hover:bg-slate-50"
++                  >
+                     <td className="font-semibold text-slate-900">{c.nombre}</td>
+                     <td>{c.telefono || '—'}</td>
+                     <td>{c.correo || '—'}</td>
+                     <td>
+                       <span className="badge-neutral">{c._count?.projects ?? 0}</span>
+                     </td>
+-                    <td>
++                    <td onClick={(e) => e.stopPropagation()}>
+                       <div className="flex items-center gap-1">
+                         <Link href={`/clientes/${c.id}`} className="btn-ghost btn-sm">
+                           <ArrowRight size={14} />
+diff --git a/src/components/pages/cotizaciones/QuotationDetailPage.tsx b/src/components/pages/cotizaciones/QuotationDetailPage.tsx
+index 98be960..a23fbb7 100644
+--- a/src/components/pages/cotizaciones/QuotationDetailPage.tsx
++++ b/src/components/pages/cotizaciones/QuotationDetailPage.tsx
+@@ -35,6 +35,7 @@ function AddItemForm({
+     alto: '',
+     ancho: '',
+     cantidad: 1,
++    fondoPersonalizado: '',
+     estiloDoble: 'FUNCIONAL',
+     tipoCajonEspecial: false,
+     cascada: 'NINGUNA',
+@@ -56,6 +57,7 @@ function AddItemForm({
+             alto: item.alto || '',
+             ancho: item.ancho || '',
+             cantidad: item.cantidad,
++            fondoPersonalizado: (item as any).fondoPersonalizado || '',
+ 
+             estiloDoble: (item as any).estiloDoble || 'FUNCIONAL',
+             tipoCajonEspecial: (item as any).tipoCajonEspecial || false,
+@@ -119,6 +121,7 @@ function AddItemForm({
+         ancho: form.ancho ? Number(form.ancho) : undefined,
+         cantidad: Number(form.cantidad),
+         countertopTypeId: form.countertopTypeId || undefined,
++        fondoPersonalizado: form.fondoPersonalizado?.trim() || null,
+       });
+       onClose();
+     } finally {
+diff --git a/src/components/pages/cotizaciones/QuotationsPage.tsx b/src/components/pages/cotizaciones/QuotationsPage.tsx
+index dc35830..8c6a8f9 100644
+--- a/src/components/pages/cotizaciones/QuotationsPage.tsx
++++ b/src/components/pages/cotizaciones/QuotationsPage.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ import { useEffect, useState } from 'react';
+ import Link from 'next/link';
++import { useRouter } from 'next/navigation';
+ import { FileText, ArrowRight, Trash2 } from 'lucide-react';
+ import toast from 'react-hot-toast';
+ import { quotationsApi } from '@/lib/api';
+@@ -9,6 +10,7 @@ import { formatCRC, formatDate } from '@/types';
+ import { PageLoader, QuotationBadge, EmptyState, Confirm } from '@/components/ui';
+ 
+ export default function QuotationsPage() {
++  const router = useRouter();
+   const [quotations, setQuotations] = useState<Quotation[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [deleteId, setDeleteId] = useState<string | null>(null);
+@@ -61,14 +63,18 @@ export default function QuotationsPage() {
+                 <tr><td colSpan={7}><EmptyState icon={<FileText size={24} />} title="Sin cotizaciones" /></td></tr>
+               ) : (
+                 quotations.map((q) => (
+-                  <tr key={q.id}>
++                  <tr
++                    key={q.id}
++                    onClick={() => router.push(`/cotizaciones/${q.id}`)}
++                    className="cursor-pointer hover:bg-slate-50"
++                  >
+                     <td className="font-semibold">v{q.version}</td>
+                     <td>{q.project?.nombreProyecto || '—'}</td>
+                     <td>{q.project?.client?.nombre || '—'}</td>
+                     <td><QuotationBadge status={q.estado} /></td>
+                     <td className="font-semibold">{formatCRC(q.total)}</td>
+                     <td>{formatDate(q.createdAt)}</td>
+-                    <td>
++                    <td onClick={(e) => e.stopPropagation()}>
+                       <div className="flex items-center gap-1">
+                         <Link href={`/cotizaciones/${q.id}`} className="btn-ghost btn-sm">
+                           Ver <ArrowRight size={12} />
+diff --git a/src/components/pages/horario/TimesheetPage.tsx b/src/components/pages/horario/TimesheetPage.tsx
+index 4c74235..947a1df 100644
+--- a/src/components/pages/horario/TimesheetPage.tsx
++++ b/src/components/pages/horario/TimesheetPage.tsx
+@@ -1,11 +1,12 @@
+ ﻿'use client';
+-import { useEffect, useState } from 'react';
++import { useEffect, useRef, useState } from 'react';
+ import { Clock, LogIn, LogOut, Calendar, Users, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+ import toast from 'react-hot-toast';
+ import { timesheetApi, usersApi } from '@/lib/api';
+ import { useAuthStore } from '@/store/auth.store';
+ import { formatCRC } from '@/types';
+ import { PageLoader, Spinner, Modal, FormGroup, Confirm, MoneyInput } from '@/components/ui';
++import { usePushNotifications } from '@/hooks/usePushNotifications';
+ 
+ // ─── Helpers ─────────────────────────────────────────
+ function formatTime(iso?: string | null): string {
+@@ -49,12 +50,47 @@ const BREAK_ORDER: BreakType[] = ['desayuno', 'almuerzo', 'cafe'];
+ 
+ // ─── Widget de fichaje (empleado/trabajador) ─────────
+ function ClockWidget() {
++  const { status: pushStatus, subscribe: subscribePush } = usePushNotifications();
+   const [entry, setEntry] = useState<any>(null);
+   const [minutosPermitidos, setMinutosPermitidos] = useState<Record<string, number>>({ DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 });
+   const [loading, setLoading] = useState(true);
+   const [working, setWorking] = useState(false);
+   const [elapsedStr, setElapsedStr] = useState('');
+   const [breakElapsedStr, setBreakElapsedStr] = useState('');
++  const [breakMinutosElapsed, setBreakMinutosElapsed] = useState(0);
++  const [confirmingClockOut, setConfirmingClockOut] = useState(false);
++
++  // Alarma sonora cuando un descanso excede el tiempo permitido (foreground).
++  // El aviso fuera de la app (con esta pantalla cerrada) lo cubre Web Push,
++  // más abajo — ver usePushNotifications.
++  const alarmRef = useRef<HTMLAudioElement | null>(null);
++  const alarmInterval = useRef<ReturnType<typeof setInterval> | null>(null);
++
++  useEffect(() => {
++    alarmRef.current = new Audio('/sounds/alarm.mp3');
++    alarmRef.current.loop = false;
++    return () => {
++      if (alarmInterval.current) clearInterval(alarmInterval.current);
++    };
++  }, []);
++
++  const startAlarm = () => {
++    if (alarmInterval.current) return;
++    const play = () => { alarmRef.current?.play().catch(() => {}); };
++    play();
++    alarmInterval.current = setInterval(play, 5000);
++  };
++
++  const stopAlarm = () => {
++    if (alarmInterval.current) {
++      clearInterval(alarmInterval.current);
++      alarmInterval.current = null;
++    }
++    if (alarmRef.current) {
++      alarmRef.current.pause();
++      alarmRef.current.currentTime = 0;
++    }
++  };
+ 
+     const load = () => {
+         timesheetApi.today().then((res: any) => {
+@@ -93,20 +129,32 @@ function ClockWidget() {
+ 
+   // Contador específico del descanso activo, con aviso de exceso
+   useEffect(() => {
+-    if (!activeBreak || !entry) { setBreakElapsedStr(''); return; }
++    if (!activeBreak || !entry) {
++      setBreakElapsedStr('');
++      setBreakMinutosElapsed(0);
++      stopAlarm();
++      return;
++    }
+     const cfg = BREAK_CONFIG[activeBreak];
+     const startVal = entry[cfg.startField];
+-    if (!startVal) { setBreakElapsedStr(''); return; }
++    if (!startVal) {
++      setBreakElapsedStr('');
++      setBreakMinutosElapsed(0);
++      stopAlarm();
++      return;
++    }
+     const update = () => {
+       const ms = Date.now() - new Date(startVal).getTime();
+       const m = Math.floor(ms / 60000);
+       const s = Math.floor((ms % 60000) / 1000);
+       setBreakElapsedStr(`${m}:${String(s).padStart(2,'0')}`);
++      setBreakMinutosElapsed(m);
++      if (m >= minutosPermitidos[cfg.policyKey]) startAlarm();
+     };
+     update();
+     const interval = setInterval(update, 1000);
+     return () => clearInterval(interval);
+-  }, [activeBreak, entry]);
++  }, [activeBreak, entry, minutosPermitidos]);
+ 
+   const handleAction = async (action: () => Promise<any>) => {
+     setWorking(true);
+@@ -122,9 +170,13 @@ function ClockWidget() {
+   };
+ 
+   const handleClockIn = () => handleAction(() => timesheetApi.clockIn());
+-  const handleClockOut = () => handleAction(() => timesheetApi.clockOut(entry.id));
++  const doClockOut = () => handleAction(() => timesheetApi.clockOut(entry.id));
++  const handleClockOut = () => setConfirmingClockOut(true);
+   const handleStartBreak = (tipo: BreakType) => handleAction(() => timesheetApi.startBreak(entry.id, tipo));
+-  const handleEndBreak = (tipo: BreakType) => handleAction(() => timesheetApi.endBreak(entry.id, tipo));
++  const handleEndBreak = (tipo: BreakType) => {
++    stopAlarm();
++    return handleAction(() => timesheetApi.endBreak(entry.id, tipo));
++  };
+ 
+   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
+ 
+@@ -144,6 +196,17 @@ function ClockWidget() {
+         <Clock size={18} className="text-wood-500" /> Mi jornada de hoy
+       </h2>
+ 
++      {pushStatus === 'unsubscribed' && (
++        <button className="btn-secondary btn-sm w-full justify-center" onClick={subscribePush}>
++          🔔 Activar avisos de descanso (aunque cierre la app)
++        </button>
++      )}
++      {pushStatus === 'denied' && (
++        <p className="text-xs text-amber-600 text-center">
++          Bloqueaste las notificaciones. Actívalas en los ajustes del teléfono/navegador para recibir el aviso cuando cierres la app.
++        </p>
++      )}
++
+       {/* Estado / cronómetro principal */}
+       <div className={`rounded-xl p-5 text-center ${
+         fase === 'TRABAJANDO' ? 'bg-green-50 border border-green-200' :
+@@ -169,6 +232,11 @@ function ClockWidget() {
+             <p className="text-xs text-slate-500 mt-1">
+               {minutosPermitidos[BREAK_CONFIG[activeBreak].policyKey]} min incluidos en la jornada paga
+             </p>
++            {breakMinutosElapsed >= minutosPermitidos[BREAK_CONFIG[activeBreak].policyKey] && (
++              <div className="bg-red-600 text-white rounded-lg p-4 text-center animate-pulse font-bold mt-3">
++                🚨 {BREAK_CONFIG[activeBreak].label.toUpperCase()} TERMINÓ. MARQUE "FINALIZAR {BREAK_CONFIG[activeBreak].label.toUpperCase()}".
++              </div>
++            )}
+           </>
+         )}
+ 
+@@ -255,6 +323,15 @@ function ClockWidget() {
+           <p className="text-xs text-slate-400 text-center">Jornada registrada ✓</p>
+         )}
+       </div>
++
++      {confirmingClockOut && (
++        <Confirm
++          message="¿Está seguro de que desea finalizar su jornada laboral?"
++          onConfirm={() => { setConfirmingClockOut(false); doClockOut(); }}
++          onCancel={() => setConfirmingClockOut(false)}
++          loading={working}
++        />
++      )}
+     </div>
+   );
+ }
+@@ -342,7 +419,7 @@ function AdminPanel() {
+   const [selectedUser, setSelectedUser] = useState('');
+   const [editEntry, setEditEntry] = useState<any | null>(null);
+   const [deleteEntry, setDeleteEntry] = useState<any | null>(null);
+-  const [editingWage, setEditingWage] = useState<{ userId: string; nombre: string; tarifaHora: string } | null>(null);
++  const [editingWage, setEditingWage] = useState<{ userId: string; nombre: string; tarifaHora: string; tarifaHoraExceso: string } | null>(null);
+   const [savingWage, setSavingWage] = useState(false);
+   const [working, setWorking] = useState(false);
+   const [closingWeek, setClosingWeek] = useState(false);
+@@ -350,6 +427,9 @@ function AdminPanel() {
+   const [confirmClose, setConfirmClose] = useState(false);
+   const [breakPolicy, setBreakPolicy] = useState<Record<string, number>>({ DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 });
+   const [editingPolicy, setEditingPolicy] = useState<Record<string, string> | null>(null);
++  const [umbralHoras, setUmbralHoras] = useState(50);
++  const [editingUmbral, setEditingUmbral] = useState<string | null>(null);
++  const [savingUmbral, setSavingUmbral] = useState(false);
+   const [savingPolicy, setSavingPolicy] = useState(false);
+ 
+   const weekEnd = endOfWeekDate(weekCursor);
+@@ -363,10 +443,12 @@ function AdminPanel() {
+       timesheetApi.report({ userId: selectedUser || undefined, desde, hasta }),
+       usersApi.list(),
+       timesheetApi.breakPolicy(),
+-    ]).then(([repRes, usr, policy]) => {
++      timesheetApi.wageThreshold(),
++    ]).then(([repRes, usr, policy, threshold]) => {
+       setReport(repRes.data);
+       setUsers(usr.filter((u: any) => u.activo));
+       setBreakPolicy(policy);
++      setUmbralHoras(threshold.umbralHoras);
+     }).finally(() => setLoading(false));
+   };
+ 
+@@ -380,7 +462,11 @@ function AdminPanel() {
+     if (!editingWage || !editingWage.tarifaHora) return;
+     setSavingWage(true);
+     try {
+-      await timesheetApi.setWage(editingWage.userId, Number(editingWage.tarifaHora));
++      await timesheetApi.setWage(
++        editingWage.userId,
++        Number(editingWage.tarifaHora),
++        editingWage.tarifaHoraExceso ? Number(editingWage.tarifaHoraExceso) : null
++      );
+       toast.success('Tarifa actualizada');
+       setEditingWage(null);
+       load();
+@@ -391,6 +477,21 @@ function AdminPanel() {
+     }
+   };
+ 
++  const handleSaveUmbral = async () => {
++    if (!editingUmbral) return;
++    setSavingUmbral(true);
++    try {
++      await timesheetApi.setWageThreshold(Number(editingUmbral));
++      toast.success('Umbral actualizado');
++      setUmbralHoras(Number(editingUmbral));
++      setEditingUmbral(null);
++    } catch (err: any) {
++      toast.error(err.response?.data?.error || 'Error al guardar');
++    } finally {
++      setSavingUmbral(false);
++    }
++  };
++
+   const handleSaveEdit = async () => {
+     if (!editEntry) return;
+     setWorking(true);
+@@ -405,7 +506,14 @@ function AdminPanel() {
+       await timesheetApi.updateEntry(editEntry.id, {
+         horaEntrada: localToISO(editEntry.horaEntradaEdit),
+         horaSalida: localToISO(editEntry.horaSalidaEdit),
++        desayunoInicio: localToISO(editEntry.desayunoInicioEdit),
++        desayunoFin: localToISO(editEntry.desayunoFinEdit),
++        almuerzoInicio: localToISO(editEntry.almuerzoInicioEdit),
++        almuerzoFin: localToISO(editEntry.almuerzoFinEdit),
++        cafeInicio: localToISO(editEntry.cafeInicioEdit),
++        cafeFin: localToISO(editEntry.cafeFinEdit),
+         observaciones: editEntry.obsEdit,
++        motivo: editEntry.motivoEdit || undefined,
+       });
+       toast.success('Registro actualizado');
+       setEditEntry(null);
+@@ -513,6 +621,13 @@ function AdminPanel() {
+             >
+               ⚙️ Descansos
+             </button>
++            <button
++              className="btn-secondary btn-sm"
++              onClick={() => setEditingUmbral(String(umbralHoras))}
++              title="Configurar umbral de horas para tarifa de exceso"
++            >
++              ⚙️ Umbral tarifa
++            </button>
+           </div>
+         </div>
+ 
+@@ -561,14 +676,18 @@ function AdminPanel() {
+                       {row.totalExcedente > 0 && <span className="text-slate-500 text-xs font-normal ml-1">· {row.totalExcedente}' adicionales de descanso</span>}
+                     </p>
+                     {row.tarifaHora ? (
+-                      <p className="text-xs text-slate-500">{formatCRC(row.tarifaHora)}/h = <span className="font-bold text-green-600">{formatCRC(row.salarioCalculado)}</span></p>
++                      <p className="text-xs text-slate-500">
++                        {formatCRC(row.tarifaHora)}/h
++                        {row.tarifaHoraExceso ? <> · {formatCRC(row.tarifaHoraExceso)}/h tras {row.umbralHoras}h</> : ''}
++                        {' '}= <span className="font-bold text-green-600">{formatCRC(row.salarioCalculado)}</span>
++                      </p>
+                     ) : (
+                       <p className="text-xs text-slate-400">Sin tarifa configurada</p>
+                     )}
+                   </div>
+                   <button
+                     className="btn-secondary btn-sm"
+-                    onClick={() => setEditingWage({ userId: row.user.id, nombre: row.user.nombre, tarifaHora: String(row.tarifaHora || '') })}
++                    onClick={() => setEditingWage({ userId: row.user.id, nombre: row.user.nombre, tarifaHora: String(row.tarifaHora || ''), tarifaHoraExceso: String(row.tarifaHoraExceso || '') })}
+                   >
+                     <Pencil size={13} /> Tarifa
+                   </button>
+@@ -602,7 +721,14 @@ function AdminPanel() {
+                                 ...e,
+                                 horaEntradaEdit: toLocalDatetimeInput(e.horaEntrada),
+                                 horaSalidaEdit: toLocalDatetimeInput(e.horaSalida),
++                                desayunoInicioEdit: toLocalDatetimeInput(e.desayunoInicio),
++                                desayunoFinEdit: toLocalDatetimeInput(e.desayunoFin),
++                                almuerzoInicioEdit: toLocalDatetimeInput(e.almuerzoInicio),
++                                almuerzoFinEdit: toLocalDatetimeInput(e.almuerzoFin),
++                                cafeInicioEdit: toLocalDatetimeInput(e.cafeInicio),
++                                cafeFinEdit: toLocalDatetimeInput(e.cafeFin),
+                                 obsEdit: e.observaciones || '',
++                                motivoEdit: '',
+                               })} title="Editar">
+                                 <Pencil size={12} />
+                               </button>
+@@ -632,9 +758,12 @@ function AdminPanel() {
+       {editingWage && (
+         <Modal title={`Tarifa de ${editingWage.nombre}`} onClose={() => setEditingWage(null)} size="sm">
+           <div className="space-y-4">
+-            <FormGroup label="Tarifa por hora (₡)" required>
++            <FormGroup label={`Tarifa hasta ${umbralHoras}h por semana (₡)`} required>
+               <MoneyInput value={editingWage.tarifaHora} onChange={(v) => setEditingWage((p) => p ? ({ ...p, tarifaHora: v }) : p)} placeholder="Ej: 3 000" />
+             </FormGroup>
++            <FormGroup label={`Tarifa por exceso de ${umbralHoras}h por semana (₡)`}>
++              <MoneyInput value={editingWage.tarifaHoraExceso} onChange={(v) => setEditingWage((p) => p ? ({ ...p, tarifaHoraExceso: v }) : p)} placeholder="Opcional — si se deja vacío, se usa la tarifa normal" />
++            </FormGroup>
+             <p className="text-xs text-slate-500">El salario calculado = horas trabajadas × tarifa/hora. Solo visible para el administrador.</p>
+             <div className="flex justify-end gap-2">
+               <button className="btn-secondary" onClick={() => setEditingWage(null)}>Cancelar</button>
+@@ -658,10 +787,44 @@ function AdminPanel() {
+               <input type="datetime-local" className="input" value={editEntry.horaSalidaEdit}
+                 onChange={(e) => setEditEntry((p: any) => ({ ...p, horaSalidaEdit: e.target.value }))} />
+             </FormGroup>
++
++            <p className="text-xs font-semibold text-slate-500 pt-1">Descansos</p>
++            <div className="grid grid-cols-2 gap-3">
++              <FormGroup label="☕ Desayuno — inicio">
++                <input type="datetime-local" className="input" value={editEntry.desayunoInicioEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, desayunoInicioEdit: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="☕ Desayuno — fin">
++                <input type="datetime-local" className="input" value={editEntry.desayunoFinEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, desayunoFinEdit: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="🍽️ Almuerzo — inicio">
++                <input type="datetime-local" className="input" value={editEntry.almuerzoInicioEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, almuerzoInicioEdit: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="🍽️ Almuerzo — fin">
++                <input type="datetime-local" className="input" value={editEntry.almuerzoFinEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, almuerzoFinEdit: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="☕ Café — inicio">
++                <input type="datetime-local" className="input" value={editEntry.cafeInicioEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, cafeInicioEdit: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="☕ Café — fin">
++                <input type="datetime-local" className="input" value={editEntry.cafeFinEdit}
++                  onChange={(e) => setEditEntry((p: any) => ({ ...p, cafeFinEdit: e.target.value }))} />
++              </FormGroup>
++            </div>
++
+             <FormGroup label="Observaciones">
+               <input className="input" value={editEntry.obsEdit}
+                 onChange={(e) => setEditEntry((p: any) => ({ ...p, obsEdit: e.target.value }))} />
+             </FormGroup>
++            <FormGroup label="Motivo de la corrección (queda en la bitácora)">
++              <input className="input" value={editEntry.motivoEdit}
++                placeholder="Ej: el trabajador olvidó marcar el fin del almuerzo"
++                onChange={(e) => setEditEntry((p: any) => ({ ...p, motivoEdit: e.target.value }))} />
++            </FormGroup>
+             <div className="flex justify-end gap-2">
+               <button className="btn-secondary" onClick={() => setEditEntry(null)}>Cancelar</button>
+               <button className="btn-primary" onClick={handleSaveEdit} disabled={working}>
+@@ -717,6 +880,26 @@ function AdminPanel() {
+           </div>
+         </Modal>
+       )}
++
++      {editingUmbral !== null && (
++        <Modal title="Umbral de horas semanales" onClose={() => setEditingUmbral(null)} size="sm">
++          <div className="space-y-4">
++            <p className="text-xs text-slate-500">
++              Cantidad de horas semanales a partir de la cual se aplica la tarifa de exceso configurada por trabajador.
++            </p>
++            <FormGroup label="Horas" required>
++              <input type="number" min={1} className="input" value={editingUmbral}
++                onChange={(e) => setEditingUmbral(e.target.value)} />
++            </FormGroup>
++            <div className="flex justify-end gap-2">
++              <button className="btn-secondary" onClick={() => setEditingUmbral(null)}>Cancelar</button>
++              <button className="btn-primary" onClick={handleSaveUmbral} disabled={savingUmbral}>
++                {savingUmbral ? <Spinner size="sm" /> : 'Guardar'}
++              </button>
++            </div>
++          </div>
++        </Modal>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/components/pages/inventario/InventoryPage.tsx b/src/components/pages/inventario/InventoryPage.tsx
+index 2aef008..07e1101 100644
+--- a/src/components/pages/inventario/InventoryPage.tsx
++++ b/src/components/pages/inventario/InventoryPage.tsx
+@@ -1,10 +1,10 @@
+ 'use client';
+ import { useEffect, useState } from 'react';
+-import { Package, Plus, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
++import { Package, Plus, AlertTriangle, ArrowUp, ArrowDown, Pencil, Trash2 } from 'lucide-react';
+ import toast from 'react-hot-toast';
+ import { inventoryApi } from '@/lib/api';
+ import type { InventoryItem } from '@/types';
+-import { PageLoader, EmptyState, Modal, FormGroup, Spinner } from '@/components/ui';
++import { PageLoader, EmptyState, Modal, FormGroup, Spinner, Confirm } from '@/components/ui';
+ import { useAuthStore } from '@/store/auth.store';
+ 
+ export default function InventoryPage() {
+@@ -17,6 +17,10 @@ export default function InventoryPage() {
+   const [adjustQty, setAdjustQty] = useState(1);
+   const [saving, setSaving] = useState(false);
+   const [newItem, setNewItem] = useState({ nombre: '', categoria: '', unidadMedida: '', stockMinimo: 0 });
++  const [editItem, setEditItem] = useState<InventoryItem | null>(null);
++  const [editForm, setEditForm] = useState({ nombre: '', categoria: '', unidadMedida: '' });
++  const [deleteItem, setDeleteItem] = useState<InventoryItem | null>(null);
++  const [deleting, setDeleting] = useState(false);
+ 
+     const load = async () => {
+         try {
+@@ -71,6 +75,42 @@ export default function InventoryPage() {
+     }
+   };
+ 
++  const openEdit = (item: InventoryItem) => {
++    setEditItem(item);
++    setEditForm({ nombre: item.nombre, categoria: item.categoria || '', unidadMedida: item.unidadMedida || '' });
++  };
++
++  const handleSaveEdit = async () => {
++    if (!editItem) return;
++    if (!editForm.nombre.trim()) { toast.error('El nombre es requerido'); return; }
++    setSaving(true);
++    try {
++      await inventoryApi.update(editItem.id, editForm);
++      toast.success('Item actualizado');
++      setEditItem(null);
++      load();
++    } catch (err: any) {
++      toast.error(err.response?.data?.error || 'Error al guardar');
++    } finally {
++      setSaving(false);
++    }
++  };
++
++  const handleDelete = async () => {
++    if (!deleteItem) return;
++    setDeleting(true);
++    try {
++      await inventoryApi.delete(deleteItem.id);
++      toast.success('Item eliminado');
++      setDeleteItem(null);
++      load();
++    } catch (err: any) {
++      toast.error(err.response?.data?.error || 'No se pudo eliminar');
++    } finally {
++      setDeleting(false);
++    }
++  };
++
+   if (loading) return <PageLoader />;
+ 
+   return (
+@@ -136,6 +176,16 @@ export default function InventoryPage() {
+                           >
+                             <ArrowDown size={13} />
+                           </button>
++                          {isAdmin && (
++                            <>
++                              <button className="btn-ghost btn-sm" onClick={() => openEdit(item)} title="Editar">
++                                <Pencil size={13} />
++                              </button>
++                              <button className="btn-ghost btn-sm text-danger" onClick={() => setDeleteItem(item)} title="Eliminar">
++                                <Trash2 size={13} />
++                              </button>
++                            </>
++                          )}
+                         </div>
+                       </td>
+                     </tr>
+@@ -195,6 +245,40 @@ export default function InventoryPage() {
+           </div>
+         </Modal>
+       )}
++      {/* Modal editar item (solo admin) */}
++      {editItem && (
++        <Modal title={`Editar — ${editItem.nombre}`} onClose={() => setEditItem(null)} size="sm">
++          <div className="space-y-4">
++            <FormGroup label="Nombre" required>
++              <input className="input" value={editForm.nombre} onChange={(e) => setEditForm((p) => ({ ...p, nombre: e.target.value }))} />
++            </FormGroup>
++            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++              <FormGroup label="Categoría">
++                <input className="input" value={editForm.categoria} onChange={(e) => setEditForm((p) => ({ ...p, categoria: e.target.value }))} />
++              </FormGroup>
++              <FormGroup label="Unidad">
++                <input className="input" value={editForm.unidadMedida} onChange={(e) => setEditForm((p) => ({ ...p, unidadMedida: e.target.value }))} />
++              </FormGroup>
++            </div>
++            <div className="flex justify-end gap-2">
++              <button className="btn-secondary" onClick={() => setEditItem(null)}>Cancelar</button>
++              <button className="btn-primary" onClick={handleSaveEdit} disabled={saving}>
++                {saving ? <Spinner size="sm" /> : 'Guardar cambios'}
++              </button>
++            </div>
++          </div>
++        </Modal>
++      )}
++
++      {/* Confirmar eliminación (solo admin) */}
++      {deleteItem && (
++        <Confirm
++          message={`¿Eliminar "${deleteItem.nombre}" del inventario? Esta acción no se puede deshacer.`}
++          onConfirm={handleDelete}
++          onCancel={() => setDeleteItem(null)}
++          loading={deleting}
++        />
++      )}
+     </div>
+   );
+ }
+diff --git a/src/components/pages/pagos/PaymentsPage.tsx b/src/components/pages/pagos/PaymentsPage.tsx
+index abe6e96..4a0ddf3 100644
+--- a/src/components/pages/pagos/PaymentsPage.tsx
++++ b/src/components/pages/pagos/PaymentsPage.tsx
+@@ -2,17 +2,18 @@
+ import Link from 'next/link';
+ import { useEffect, useState } from 'react';
+ import {
+-    CreditCard, Plus, Receipt, Download, ArrowRight,ArrowLeft, FolderKanban } from 'lucide-react';
++    CreditCard, Plus, Receipt, Download, ArrowRight,ArrowLeft, FolderKanban, Paperclip, X } from 'lucide-react';
+ import toast from 'react-hot-toast';
+ import { paymentsApi, projectsApi, pdfApi } from '@/lib/api';
+ import type { Payment, Project } from '@/types';
+ import { formatCRC, formatDate } from '@/types';
+ import { PageLoader, Modal, FormGroup, Spinner, EmptyState, MoneyInput } from '@/components/ui';
+-import { useSearchParams } from 'next/navigation';
++import { useSearchParams, useRouter } from 'next/navigation';
+ import { Trash2 } from 'lucide-react';
+ 
+ export default function PaymentsPage() {
+     const searchParams = useSearchParams();
++    const router = useRouter();
+     const proyectoId = searchParams.get('proyecto');
+   const [project, setProject] = useState<Project | null>(null);
+   const [allProjects, setAllProjects] = useState<Project[]>([]);
+@@ -21,6 +22,10 @@ export default function PaymentsPage() {
+   const [showCreate, setShowCreate] = useState(false);
+   const [form, setForm] = useState({ monto: '', observaciones: '', comprobanteUrl: '' });
+   const [saving, setSaving] = useState(false);
++  const [receiptFilesPayment, setReceiptFilesPayment] = useState<Payment | null>(null);
++  const [receiptFiles, setReceiptFiles] = useState<any[]>([]);
++  const [loadingReceiptFiles, setLoadingReceiptFiles] = useState(false);
++  const [uploadingReceiptFile, setUploadingReceiptFile] = useState(false);
+ 
+     const load = async () => {
+         if (!proyectoId) {
+@@ -87,6 +92,43 @@ export default function PaymentsPage() {
+         }
+     };
+ 
++    const openReceiptFiles = async (payment: Payment) => {
++        setReceiptFilesPayment(payment);
++        setLoadingReceiptFiles(true);
++        try {
++            const files = await paymentsApi.listReceiptFiles(payment.id);
++            setReceiptFiles(files);
++        } catch {
++            toast.error('No se pudo cargar el respaldo');
++        } finally {
++            setLoadingReceiptFiles(false);
++        }
++    };
++
++    const handleUploadReceiptFile = async (file: File) => {
++        if (!receiptFilesPayment) return;
++        setUploadingReceiptFile(true);
++        try {
++            const uploaded = await paymentsApi.uploadReceiptFile(receiptFilesPayment.id, file);
++            setReceiptFiles((prev) => [uploaded, ...prev]);
++            toast.success('Imagen agregada');
++        } catch (err: any) {
++            toast.error(err.response?.data?.error || 'No se pudo subir la imagen');
++        } finally {
++            setUploadingReceiptFile(false);
++        }
++    };
++
++    const handleDeleteReceiptFile = async (fileId: string) => {
++        try {
++            await paymentsApi.deleteReceiptFile(fileId);
++            setReceiptFiles((prev) => prev.filter((f) => f.id !== fileId));
++            toast.success('Imagen eliminada');
++        } catch {
++            toast.error('No se pudo eliminar la imagen');
++        }
++    };
++
+ 
+   if (loading) return <PageLoader />;
+ 
+@@ -116,8 +158,12 @@ export default function PaymentsPage() {
+                   </td></tr>
+                 ) : (
+                   allProjects.map((p) => (
+-                    <tr key={p.id}>
+-                      <td className="font-semibold text-slate-900">
++                    <tr
++                      key={p.id}
++                      onClick={() => router.push(`/pagos?proyecto=${p.id}`)}
++                      className="cursor-pointer hover:bg-slate-50"
++                    >
++                      <td className="font-semibold text-slate-900" onClick={(e) => e.stopPropagation()}>
+                         <Link href={`/proyectos/${p.id}`} className="hover:text-wood-600 flex items-center gap-2">
+                           <FolderKanban size={14} className="text-wood-500" />
+                           {p.nombreProyecto}
+@@ -125,7 +171,7 @@ export default function PaymentsPage() {
+                       </td>
+                       <td>{p.client?.nombre || '—'}</td>
+                       <td className="font-semibold">{p.sale ? formatCRC(p.sale.total) : '—'}</td>
+-                      <td>
++                      <td onClick={(e) => e.stopPropagation()}>
+                               <Link href={`/pagos?proyecto=${p.id}`}
+                                   prefetch={false} className="btn-ghost btn-sm">
+                           Ver pagos <ArrowRight size={12} />
+@@ -213,13 +259,13 @@ export default function PaymentsPage() {
+         <div className="table-wrap">
+           <table className="table">
+             <thead>
+-                          <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th>
++                          <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th><th>Respaldo</th>
+                               <th>Acciones</th></tr>
+             </thead>
+             <tbody>
+               {payments.length === 0 ? (
+                 <tr>
+-                  <td colSpan={5}>
++                  <td colSpan={6}>
+                     <EmptyState icon={<CreditCard size={24} />} title="Sin pagos registrados" />
+                   </td>
+                 </tr>
+@@ -246,6 +292,11 @@ export default function PaymentsPage() {
+                         </div>
+                       ) : '—'}
+                         </td>
++                        <td>
++                          <button className="btn-ghost btn-sm" onClick={() => openReceiptFiles(p)} title="Ver/agregar imágenes de respaldo">
++                            <Paperclip size={13} /> {p._count?.receiptFiles ? p._count.receiptFiles : ''}
++                          </button>
++                        </td>
+                         <td>
+                             <button
+                                 className="btn-danger btn-sm"
+@@ -291,6 +342,58 @@ export default function PaymentsPage() {
+           </div>
+         </Modal>
+       )}
++
++      {receiptFilesPayment && (
++        <Modal
++          title={`Respaldo — pago ${formatCRC(receiptFilesPayment.monto)} (${formatDate(receiptFilesPayment.fechaPago)})`}
++          onClose={() => setReceiptFilesPayment(null)}
++          size="sm"
++        >
++          <div className="space-y-4">
++            <p className="text-xs text-slate-500">
++              Imágenes de respaldo del comprobante (capturas o fotos que el cliente envió). Solo visible para administración; se guardan en un almacenamiento privado, independiente del recibo en PDF.
++            </p>
++
++            <label className="btn-secondary btn-sm w-full justify-center cursor-pointer">
++              {uploadingReceiptFile ? <Spinner size="sm" /> : <><Paperclip size={14} /> Agregar imagen</>}
++              <input
++                type="file"
++                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
++                className="hidden"
++                disabled={uploadingReceiptFile}
++                onChange={(e) => {
++                  const file = e.target.files?.[0];
++                  if (file) handleUploadReceiptFile(file);
++                  e.target.value = '';
++                }}
++              />
++            </label>
++
++            {loadingReceiptFiles ? (
++              <div className="flex justify-center py-4"><Spinner /></div>
++            ) : receiptFiles.length === 0 ? (
++              <p className="text-sm text-slate-400 text-center py-4">Sin imágenes de respaldo todavía</p>
++            ) : (
++              <div className="grid grid-cols-3 gap-2">
++                {receiptFiles.map((f) => (
++                  <div key={f.id} className="relative group">
++                    <a href={f.url} target="_blank" rel="noopener noreferrer">
++                      <img src={f.url} alt={f.nombreArchivo} className="w-full h-20 object-cover rounded border" />
++                    </a>
++                    <button
++                      className="absolute -top-1.5 -right-1.5 bg-white border rounded-full p-0.5 text-danger shadow-sm"
++                      onClick={() => handleDeleteReceiptFile(f.id)}
++                      title="Eliminar imagen"
++                    >
++                      <X size={12} />
++                    </button>
++                  </div>
++                ))}
++              </div>
++            )}
++          </div>
++        </Modal>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/components/pages/proyectos/ProjectsPage.tsx b/src/components/pages/proyectos/ProjectsPage.tsx
+index e2ae9d0..f350d42 100644
+--- a/src/components/pages/proyectos/ProjectsPage.tsx
++++ b/src/components/pages/proyectos/ProjectsPage.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ import { useEffect, useState } from 'react';
+ import Link from 'next/link';
++import { useRouter } from 'next/navigation';
+ import { FolderKanban, Search, ArrowRight } from 'lucide-react';
+ import { projectsApi } from '@/lib/api';
+ import type { Project, ProjectStatus } from '@/types';
+@@ -18,6 +19,7 @@ const STATUSES: { value: string; label: string }[] = [
+ ];
+ 
+ export default function ProjectsPage() {
++  const router = useRouter();
+   const [projects, setProjects] = useState<Project[]>([]);
+   const [filtered, setFiltered] = useState<Project[]>([]);
+   const [loading, setLoading] = useState(true);
+@@ -95,9 +97,13 @@ export default function ProjectsPage() {
+                 </tr>
+               ) : (
+                 filtered.map((p) => (
+-                  <tr key={p.id}>
++                  <tr
++                    key={p.id}
++                    onClick={() => router.push(`/proyectos/${p.id}`)}
++                    className="cursor-pointer hover:bg-slate-50"
++                  >
+                     <td className="font-semibold text-slate-900">{p.nombreProyecto}</td>
+-                    <td>
++                    <td onClick={(e) => e.stopPropagation()}>
+                       <Link href={`/clientes/${p.clientId}`} className="text-wood-600 hover:underline">
+                         {p.client?.nombre}
+                       </Link>
+@@ -105,7 +111,7 @@ export default function ProjectsPage() {
+                     <td className="text-slate-500">{p.ubicacion || '—'}</td>
+                     <td><ProjectBadge status={p.estado} /></td>
+                     <td>{formatDate(p.fechaInstalacionTentativa)}</td>
+-                    <td>
++                    <td onClick={(e) => e.stopPropagation()}>
+                       <Link href={`/proyectos/${p.id}`} className="btn-ghost btn-sm">
+                         Ver <ArrowRight size={12} />
+                       </Link>
+diff --git a/src/hooks/usePushNotifications.ts b/src/hooks/usePushNotifications.ts
+new file mode 100644
+index 0000000..d97de1e
+--- /dev/null
++++ b/src/hooks/usePushNotifications.ts
+@@ -0,0 +1,72 @@
++'use client';
++import { useEffect, useState } from 'react';
++import { pushApi } from '@/lib/api';
++
++function urlBase64ToUint8Array(base64String: string) {
++  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
++  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
++  const rawData = atob(base64);
++  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
++}
++
++export type PushStatus = 'unsupported' | 'unsubscribed' | 'subscribed' | 'denied' | 'loading';
++
++export function usePushNotifications() {
++  const [status, setStatus] = useState<PushStatus>('loading');
++
++  useEffect(() => {
++    const check = async () => {
++      if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
++        setStatus('unsupported');
++        return;
++      }
++      if (Notification.permission === 'denied') {
++        setStatus('denied');
++        return;
++      }
++      const reg = await navigator.serviceWorker.register('/service-worker.js');
++      const existing = await reg.pushManager.getSubscription();
++      setStatus(existing ? 'subscribed' : 'unsubscribed');
++    };
++    check().catch(() => setStatus('unsupported'));
++  }, []);
++
++  const subscribe = async () => {
++    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
++      setStatus('unsupported');
++      return;
++    }
++    const permission = await Notification.requestPermission();
++    if (permission !== 'granted') {
++      setStatus('denied');
++      return;
++    }
++
++    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
++    if (!publicKey) {
++      console.error('Falta NEXT_PUBLIC_VAPID_PUBLIC_KEY');
++      return;
++    }
++
++    const reg = await navigator.serviceWorker.register('/service-worker.js');
++    const subscription = await reg.pushManager.subscribe({
++      userVisibleOnly: true,
++      applicationServerKey: urlBase64ToUint8Array(publicKey),
++    });
++
++    await pushApi.subscribe(subscription.toJSON());
++    setStatus('subscribed');
++  };
++
++  const unsubscribe = async () => {
++    const reg = await navigator.serviceWorker.getRegistration();
++    const sub = await reg?.pushManager.getSubscription();
++    if (sub) {
++      await pushApi.unsubscribe(sub.endpoint);
++      await sub.unsubscribe();
++    }
++    setStatus('unsubscribed');
++  };
++
++  return { status, subscribe, unsubscribe };
++}
+diff --git a/src/lib/api.ts b/src/lib/api.ts
+index 90d7ec5..8f62f86 100644
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -121,6 +121,18 @@ export const paymentsApi = {
+         api.post(`/projects/${projectId}/payment-schedule`, { cuotas }).then((r) => r.data.data),
+     delete: (id: string) =>
+         api.delete(`/payments/${id}`).then((r) => r.data),
++  // Respaldo de comprobantes (imágenes) — separado del comprobanteUrl de texto y del PDF generado
++  listReceiptFiles: (paymentId: string) =>
++    api.get(`/payments/${paymentId}/receipt-files`).then((r) => r.data.data),
++  uploadReceiptFile: (paymentId: string, file: globalThis.File) => {
++    const formData = new FormData();
++    formData.append('archivo', file);
++    return api.post(`/payments/${paymentId}/receipt-files`, formData, {
++      headers: { 'Content-Type': 'multipart/form-data' },
++    }).then((r) => r.data.data);
++  },
++  deleteReceiptFile: (fileId: string) =>
++    api.delete(`/payments/receipt-files/${fileId}`).then((r) => r.data),
+ };
+ 
+ 
+@@ -179,6 +191,9 @@ export const materialPricesApi = {
+ export const inventoryApi = {
+   list: () => api.get('/inventory').then((r) => r.data.data),
+   create: (data: any) => api.post('/inventory', data).then((r) => r.data.data),
++  update: (id: string, data: any) =>
++    api.patch(`/inventory/${id}`, data).then((r) => r.data.data),
++  delete: (id: string) => api.delete(`/inventory/${id}`).then((r) => r.data),
+   updateStock: (id: string, data: any) =>
+     api.patch(`/inventory/${id}/stock`, data).then((r) => r.data.data),
+   adjust: (id: string, cantidad: number, operacion: 'ENTRADA' | 'SALIDA') =>
+@@ -186,6 +201,11 @@ export const inventoryApi = {
+ };
+ 
+ // ─── USUARIOS ──────────────────────────────────────────
++export const auditApi = {
++  list: (tipo: 'catalogo' | 'inventario' | 'horario', filters?: { userId?: string; desde?: string; hasta?: string }) =>
++    api.get('/audit-logs', { params: { tipo, ...filters } }).then((r) => r.data.data),
++};
++
+ export const usersApi = {
+   list: () => api.get('/users').then((r) => r.data.data),
+   roles: () => api.get('/roles').then((r) => r.data.data),
+@@ -260,6 +280,11 @@ export const calendarApi = {
+ };
+ 
+ // ─── TIMESHEET ──────────────────────────────────────────
++export const pushApi = {
++  subscribe: (subscriptionJson: any) => api.post('/push/subscribe', subscriptionJson).then((r) => r.data.data),
++  unsubscribe: (endpoint: string) => api.delete('/push/subscribe', { data: { endpoint } }).then((r) => r.data),
++};
++
+ export const timesheetApi = {
+   // Empleado/Trabajador
+   today: () => api.get('/timesheet/today').then((r) => r.data),
+@@ -278,8 +303,11 @@ export const timesheetApi = {
+   // Admin
+   report: (params?: { userId?: string; desde?: string; hasta?: string }) =>
+     api.get('/timesheet/report', { params }).then((r) => r.data),
+-  setWage: (userId: string, tarifaHora: number) =>
+-    api.put(`/timesheet/wage/${userId}`, { tarifaHora }).then((r) => r.data.data),
++  setWage: (userId: string, tarifaHora: number, tarifaHoraExceso?: number | null) =>
++    api.put(`/timesheet/wage/${userId}`, { tarifaHora, tarifaHoraExceso }).then((r) => r.data.data),
++  wageThreshold: () => api.get('/timesheet/wage-threshold').then((r) => r.data.data),
++  setWageThreshold: (umbralHoras: number) =>
++    api.put('/timesheet/wage-threshold', { umbralHoras }).then((r) => r.data),
+   updateEntry: (id: string, data: any) =>
+     api.put(`/timesheet/entry/${id}`, data).then((r) => r.data),
+   deleteEntry: (id: string) =>
+diff --git a/src/lib/audit.ts b/src/lib/audit.ts
+new file mode 100644
+index 0000000..afa3e8b
+--- /dev/null
++++ b/src/lib/audit.ts
+@@ -0,0 +1,68 @@
++import { prisma } from '@/lib/prisma';
++
++// ─── Catálogo y precios ─────────────────────────────
++export async function logCatalogChange(params: {
++  userId: string;
++  modulo: 'MATERIALES' | 'TIPOS_MUEBLE' | 'TABLETOPS' | 'EXTRAS' | 'SERVICIOS' | 'PRECIOS';
++  accion: 'CREAR' | 'EDITAR' | 'ELIMINAR';
++  entidadId?: string;
++  entidadNombre?: string;
++  valorAnterior?: any;
++  valorNuevo?: any;
++}) {
++  await (prisma as any).catalogAuditLog.create({
++    data: {
++      userId: params.userId,
++      modulo: params.modulo,
++      accion: params.accion,
++      entidadId: params.entidadId,
++      entidadNombre: params.entidadNombre,
++      valorAnterior: params.valorAnterior ?? undefined,
++      valorNuevo: params.valorNuevo ?? undefined,
++    },
++  }).catch((err: any) => console.error('Error registrando bitácora de catálogo:', err));
++}
++
++// ─── Inventario ──────────────────────────────────────
++export async function logInventoryMovement(params: {
++  userId: string;
++  itemId?: string;
++  itemNombre: string;
++  tipoMovimiento: 'ENTRADA' | 'SALIDA' | 'CREAR' | 'EDITAR' | 'ELIMINAR';
++  cantidad?: number;
++  detalle?: any;
++}) {
++  await (prisma as any).inventoryAuditLog.create({
++    data: {
++      userId: params.userId,
++      itemId: params.itemId,
++      itemNombre: params.itemNombre,
++      tipoMovimiento: params.tipoMovimiento,
++      cantidad: params.cantidad,
++      detalle: params.detalle ?? undefined,
++    },
++  }).catch((err: any) => console.error('Error registrando bitácora de inventario:', err));
++}
++
++// ─── Correcciones de horario ─────────────────────────
++export async function logTimesheetCorrection(params: {
++  adminId: string;
++  trabajadorId: string;
++  timesheetEntryId: string;
++  campo: string;
++  valorAnterior?: string | null;
++  valorNuevo?: string | null;
++  motivo?: string | null;
++}) {
++  await (prisma as any).timesheetAuditLog.create({
++    data: {
++      adminId: params.adminId,
++      trabajadorId: params.trabajadorId,
++      timesheetEntryId: params.timesheetEntryId,
++      campo: params.campo,
++      valorAnterior: params.valorAnterior ?? null,
++      valorNuevo: params.valorNuevo ?? null,
++      motivo: params.motivo ?? null,
++    },
++  }).catch((err: any) => console.error('Error registrando bitácora de horario:', err));
++}
+diff --git a/src/lib/payment-receipts-storage.ts b/src/lib/payment-receipts-storage.ts
+new file mode 100644
+index 0000000..f7afc74
+--- /dev/null
++++ b/src/lib/payment-receipts-storage.ts
+@@ -0,0 +1,41 @@
++import { supabaseAdmin } from '@/lib/supabase';
++
++// Bucket dedicado y PRIVADO para respaldos de comprobantes de pago
++// (distinto de "project-files", que hoy es público). Se usa un bucket
++// separado justo por eso: acá no queremos URLs públicas, porque son
++// documentos financieros de clientes.
++export const PAYMENT_RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'payment-receipts';
++
++const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
++const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB
++
++let bucketEnsured = false;
++
++// Crea el bucket si no existe todavía. Idempotente: si ya existe, Supabase
++// devuelve un error que ignoramos. Así no depende de un paso manual en el
++// dashboard — se autoconfigura la primera vez que alguien sube un archivo.
++export async function ensureReceiptsBucket() {
++  if (bucketEnsured) return;
++
++  const { data: buckets } = await supabaseAdmin.storage.listBuckets();
++  const exists = buckets?.some((b) => b.name === PAYMENT_RECEIPTS_BUCKET);
++
++  if (!exists) {
++    const { error } = await supabaseAdmin.storage.createBucket(PAYMENT_RECEIPTS_BUCKET, {
++      public: false,
++      fileSizeLimit: MAX_FILE_SIZE_BYTES,
++      allowedMimeTypes: ALLOWED_MIME_TYPES,
++    });
++    // Si otro request ya lo creó justo antes (condición de carrera), ignorar.
++    if (error && !/already exists/i.test(error.message)) throw error;
++  }
++
++  bucketEnsured = true;
++}
++
++export function isAllowedReceiptFile(file: File) {
++  return ALLOWED_MIME_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE_BYTES;
++}
++
++export const RECEIPT_MAX_SIZE_MB = MAX_FILE_SIZE_BYTES / (1024 * 1024);
++export const RECEIPT_ALLOWED_TYPES_LABEL = 'JPG, PNG, WEBP o HEIC';
+diff --git a/src/lib/push.ts b/src/lib/push.ts
+new file mode 100644
+index 0000000..a84f607
+--- /dev/null
++++ b/src/lib/push.ts
+@@ -0,0 +1,42 @@
++import webpush from 'web-push';
++import { prisma } from '@/lib/prisma';
++
++let vapidConfigured = false;
++
++function ensureVapid() {
++  if (vapidConfigured) return;
++  const publicKey = process.env.VAPID_PUBLIC_KEY;
++  const privateKey = process.env.VAPID_PRIVATE_KEY;
++  if (!publicKey || !privateKey) {
++    throw new Error('Faltan VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en las variables de entorno');
++  }
++  webpush.setVapidDetails(
++    process.env.VAPID_CONTACT_EMAIL || 'mailto:soporte@example.com',
++    publicKey,
++    privateKey
++  );
++  vapidConfigured = true;
++}
++
++export async function sendPushToUser(userId: string, payload: Record<string, any>) {
++  ensureVapid();
++  const subs = await (prisma as any).pushSubscription.findMany({ where: { userId } });
++
++  await Promise.all(
++    subs.map(async (sub: any) => {
++      try {
++        await webpush.sendNotification(
++          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
++          JSON.stringify(payload)
++        );
++      } catch (err: any) {
++        // 404/410 = la suscripción ya no es válida (el usuario desinstaló la PWA, etc.)
++        if (err?.statusCode === 404 || err?.statusCode === 410) {
++          await (prisma as any).pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
++        } else {
++          console.error('Error enviando push:', err?.message || err);
++        }
++      }
++    })
++  );
++}
+diff --git a/src/lib/services/pdf-printer.ts b/src/lib/services/pdf-printer.ts
+index 3ca9cfa..fc5d6ba 100644
+--- a/src/lib/services/pdf-printer.ts
++++ b/src/lib/services/pdf-printer.ts
+@@ -3,8 +3,16 @@ import PdfPrinter from 'pdfmake';
+ import fs from 'fs';
+ import path from 'path';
+ 
+-// vfs_fonts en esta versión exporta directamente el objeto { 'Roboto-Regular.ttf': '...' }
+-const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
++// ─── Fuente ────────────────────────────────────────────
++// Se usa DejaVu Sans en vez de la Roboto que trae pdfmake por defecto:
++// la Roboto embebida en pdfmake NO incluye el glifo del símbolo
++// colón costarricense ₡ (U+20A1) — se confirmó que el carácter no
++// existe en esa fuente (glyph id 0 / .notdef), por eso se veía roto
++// en los PDFs. DejaVu Sans sí tiene ese glifo y es de uso libre
++// (dominio público / licencia Bitstream Vera).
++// Los .ttf viven en /public/fonts para poder leerlos con fs en el
++// entorno serverless de Vercel (igual que ya se hace con el logo).
++const FONT_DIR = path.join(process.cwd(), 'public', 'fonts');
+ 
+ // ─── Logo de la empresa (base64, cacheado) ─────────────
+ let logoCache: string | null = null;
+@@ -33,24 +41,14 @@ export function getLogoBase64(): string | null {
+ }
+ 
+ export function createPrinter() {
+-    const vfsFonts = (vfs as any).pdfMake?.vfs || vfs;
+-
+-    const getFont = (name: string) => {
+-        const font = vfsFonts[name];
+-
+-        if (!font) {
+-            throw new Error(`Fuente no encontrada: ${name}`);
+-        }
+-
+-        return Buffer.from(font, "base64");
+-    };
++    const getFont = (filename: string) => fs.readFileSync(path.join(FONT_DIR, filename));
+ 
+     return new (PdfPrinter as any)({
+-        Roboto: {
+-            normal: getFont("Roboto-Regular.ttf"),
+-            bold: getFont("Roboto-Medium.ttf"),
+-            italics: getFont("Roboto-Italic.ttf"),
+-            bolditalics: getFont("Roboto-MediumItalic.ttf"),
++        DejaVuSans: {
++            normal: getFont("DejaVuSans.ttf"),
++            bold: getFont("DejaVuSans-Bold.ttf"),
++            italics: getFont("DejaVuSans-Oblique.ttf"),
++            bolditalics: getFont("DejaVuSans-BoldOblique.ttf"),
+         },
+     });
+ }
+diff --git a/src/lib/services/quotation-pdf.service.ts b/src/lib/services/quotation-pdf.service.ts
+index 2a83d0f..9ccff46 100644
+--- a/src/lib/services/quotation-pdf.service.ts
++++ b/src/lib/services/quotation-pdf.service.ts
+@@ -75,6 +75,16 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
+     // Usar nombre personalizado si existe, si no el nombre técnico del tipo
+     const nombreMostrar = (item as any).nombrePersonalizado || item.furnitureType.nombre;
+ 
++    // item.subtotal ya viene combinado (mueble + accesorios) desde el backend.
++    // Para que el PDF no dé la impresión de que cada accesorio es un producto
++    // aparte, mostramos en la fila principal SOLO el precio del mueble, cada
++    // accesorio con el suyo debajo (en un bloque con fondo tenue), y cerramos
++    // el grupo con una fila de "Subtotal del mueble" que suma ambos —
++    // así queda explícito que el total ya incluye los accesorios listados.
++    const subtotalExtras = item.quotationItemExtras.reduce((acc, ex) => acc + Number(ex.subtotal), 0);
++    const subtotalMueble = Number(item.subtotal) - subtotalExtras;
++    const tieneExtras = item.quotationItemExtras.length > 0;
++
+     itemRows.push([
+       { text: String(idx + 1), alignment: 'center', fontSize: 8, color: C.slate500 },
+       {
+@@ -86,18 +96,36 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
+       },
+       { text: String(item.cantidad), alignment: 'center', fontSize: 9 },
+       { text: crc(item.precioUnitario), alignment: 'right', fontSize: 9 },
+-      { text: crc(item.subtotal), alignment: 'right', fontSize: 9, bold: true },
++      { text: crc(subtotalMueble), alignment: 'right', fontSize: 9, bold: true },
+     ]);
+ 
+     item.quotationItemExtras.forEach(ex => {
+       itemRows.push([
+-        { text: '', border: [false,false,false,false] },
+-        { text: `  ↳ ${ex.extra.nombre} × ${ex.cantidad}`, fontSize: 8, color: C.slate500, italics: true, border: [false,false,false,false] },
+-        { text: '', border: [false,false,false,false] },
+-        { text: '', border: [false,false,false,false] },
+-        { text: crc(ex.subtotal), alignment: 'right', fontSize: 8, color: C.slate500, border: [false,false,false,false] },
++        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
++        { text: `  ↳ ${ex.extra.nombre} × ${ex.cantidad}`, fontSize: 8, color: C.slate500, italics: true, border: [false,false,false,false], fillColor: C.slate50 },
++        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
++        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
++        { text: crc(ex.subtotal), alignment: 'right', fontSize: 8, color: C.slate500, border: [false,false,false,false], fillColor: C.slate50 },
+       ]);
+     });
++
++    if (tieneExtras) {
++      itemRows.push([
++        { text: '', border: [false,false,false,false], fillColor: C.slate50 },
++        {
++          text: 'Subtotal del mueble (incluye accesorios)', colSpan: 3, alignment: 'right',
++          fontSize: 8, bold: true, italics: true, color: C.slate700,
++          border: [false,false,false,true], borderColor: [C.slate200,C.slate200,C.slate200,C.slate200],
++          fillColor: C.slate50,
++        },
++        {}, {},
++        {
++          text: crc(item.subtotal), alignment: 'right', fontSize: 9, bold: true, color: C.slate900,
++          border: [false,false,false,true], borderColor: [C.slate200,C.slate200,C.slate200,C.slate200],
++          fillColor: C.slate50,
++        },
++      ]);
++    }
+   });
+ 
+   // Filas de servicios
+@@ -275,7 +303,7 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
+         ],
+       },
+     ],
+-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
++    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
+   };
+ 
+   return buildPdfBuffer(createPrinter(), doc);
+diff --git a/src/lib/services/receipt-pdf.service.ts b/src/lib/services/receipt-pdf.service.ts
+index 8fc034c..7adf0b1 100644
+--- a/src/lib/services/receipt-pdf.service.ts
++++ b/src/lib/services/receipt-pdf.service.ts
+@@ -281,7 +281,7 @@ export async function generateReceiptPDF(data: ReceiptPDFData): Promise<Buffer>
+         ],
+       },
+     ],
+-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
++    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
+   };
+ 
+   return buildPdfBuffer(createPrinter(), doc);
+diff --git a/src/lib/services/timesheet-pdf.service.ts b/src/lib/services/timesheet-pdf.service.ts
+index 1cde659..8fc4bc9 100644
+--- a/src/lib/services/timesheet-pdf.service.ts
++++ b/src/lib/services/timesheet-pdf.service.ts
+@@ -191,7 +191,7 @@ export async function generateWeeklyTimesheetPDF(data: WeeklyReportData): Promis
+         layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingTop: () => 8, paddingBottom: () => 8, paddingLeft: () => 10, paddingRight: () => 10 },
+       },
+     ],
+-    defaultStyle: { font: 'Roboto', fontSize: 10, color: C.slate900 },
++    defaultStyle: { font: 'DejaVuSans', fontSize: 10, color: C.slate900 },
+   };
+ 
+   return buildPdfBuffer(createPrinter(), doc);
+diff --git a/src/lib/timesheet-helpers.ts b/src/lib/timesheet-helpers.ts
+index 788a3f0..84329f6 100644
+--- a/src/lib/timesheet-helpers.ts
++++ b/src/lib/timesheet-helpers.ts
+@@ -85,6 +85,31 @@ export async function getMinutosPermitidos(): Promise<Record<string, number>> {
+   return map;
+ }
+ 
++const DEFAULT_UMBRAL_HORAS = 50;
++
++// Umbral semanal (en horas) a partir del cual se aplica la tarifa de exceso.
++// Configuración global de una sola fila, igual patrón que BreakPolicy.
++export async function getUmbralHoras(): Promise<number> {
++  const config = await (prisma as any).wageThreshold.findFirst();
++  return config?.umbralHoras ?? DEFAULT_UMBRAL_HORAS;
++}
++
++// Calcula el salario semanal aplicando dos tarifas: `tarifaHora` para las
++// primeras `umbralHoras` horas, y `tarifaHoraExceso` para las horas que
++// superen ese umbral. Si no hay tarifaHoraExceso configurada, se usa
++// tarifaHora para todo (comportamiento anterior, sin romper configs existentes).
++export function calcularSalario(
++  totalHoras: number,
++  tarifaHora: number,
++  tarifaHoraExceso: number | null | undefined,
++  umbralHoras: number
++): number {
++  const horasNormales = Math.min(totalHoras, umbralHoras);
++  const horasExceso = Math.max(0, totalHoras - umbralHoras);
++  const tarifaExceso = tarifaHoraExceso ?? tarifaHora;
++  return Number((horasNormales * tarifaHora + horasExceso * tarifaExceso).toFixed(2));
++}
++
+ export function getFase(entry: any): string {
+   if (!entry) return 'SIN_INICIAR';
+   if (entry.horaSalida) return 'FINALIZADO';
+diff --git a/src/types/index.ts b/src/types/index.ts
+index e8f9893..57e30f3 100644
+--- a/src/types/index.ts
++++ b/src/types/index.ts
+@@ -136,6 +136,7 @@ export interface Payment {
+   observaciones?: string;
+   fechaPago: string;
+   receipt?: Receipt;
++  _count?: { receiptFiles: number };
+ }
+ 
+ export interface Receipt {

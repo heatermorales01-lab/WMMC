@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,6 +21,7 @@ const schema = z.object({
 type Form = z.infer<typeof schema>;
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [filtered, setFiltered] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,14 +140,18 @@ export default function ClientsPage() {
                 </tr>
               ) : (
                 filtered.map((c) => (
-                  <tr key={c.id}>
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/clientes/${c.id}`)}
+                    className="cursor-pointer hover:bg-slate-50"
+                  >
                     <td className="font-semibold text-slate-900">{c.nombre}</td>
                     <td>{c.telefono || '—'}</td>
                     <td>{c.correo || '—'}</td>
                     <td>
                       <span className="badge-neutral">{c._count?.projects ?? 0}</span>
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <Link href={`/clientes/${c.id}`} className="btn-ghost btn-sm">
                           <ArrowRight size={14} />

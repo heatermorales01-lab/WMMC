@@ -2,17 +2,18 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
-    CreditCard, Plus, Receipt, Download, ArrowRight,ArrowLeft, FolderKanban } from 'lucide-react';
+    CreditCard, Plus, Receipt, Download, ArrowRight,ArrowLeft, FolderKanban, Paperclip, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { paymentsApi, projectsApi, pdfApi } from '@/lib/api';
 import type { Payment, Project } from '@/types';
 import { formatCRC, formatDate } from '@/types';
 import { PageLoader, Modal, FormGroup, Spinner, EmptyState, MoneyInput } from '@/components/ui';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 
 export default function PaymentsPage() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const proyectoId = searchParams.get('proyecto');
   const [project, setProject] = useState<Project | null>(null);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
@@ -21,6 +22,10 @@ export default function PaymentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ monto: '', observaciones: '', comprobanteUrl: '' });
   const [saving, setSaving] = useState(false);
+  const [receiptFilesPayment, setReceiptFilesPayment] = useState<Payment | null>(null);
+  const [receiptFiles, setReceiptFiles] = useState<any[]>([]);
+  const [loadingReceiptFiles, setLoadingReceiptFiles] = useState(false);
+  const [uploadingReceiptFile, setUploadingReceiptFile] = useState(false);
 
     const load = async () => {
         if (!proyectoId) {
@@ -87,6 +92,43 @@ export default function PaymentsPage() {
         }
     };
 
+    const openReceiptFiles = async (payment: Payment) => {
+        setReceiptFilesPayment(payment);
+        setLoadingReceiptFiles(true);
+        try {
+            const files = await paymentsApi.listReceiptFiles(payment.id);
+            setReceiptFiles(files);
+        } catch {
+            toast.error('No se pudo cargar el respaldo');
+        } finally {
+            setLoadingReceiptFiles(false);
+        }
+    };
+
+    const handleUploadReceiptFile = async (file: File) => {
+        if (!receiptFilesPayment) return;
+        setUploadingReceiptFile(true);
+        try {
+            const uploaded = await paymentsApi.uploadReceiptFile(receiptFilesPayment.id, file);
+            setReceiptFiles((prev) => [uploaded, ...prev]);
+            toast.success('Imagen agregada');
+        } catch (err: any) {
+            toast.error(err.response?.data?.error || 'No se pudo subir la imagen');
+        } finally {
+            setUploadingReceiptFile(false);
+        }
+    };
+
+    const handleDeleteReceiptFile = async (fileId: string) => {
+        try {
+            await paymentsApi.deleteReceiptFile(fileId);
+            setReceiptFiles((prev) => prev.filter((f) => f.id !== fileId));
+            toast.success('Imagen eliminada');
+        } catch {
+            toast.error('No se pudo eliminar la imagen');
+        }
+    };
+
 
   if (loading) return <PageLoader />;
 
@@ -116,8 +158,12 @@ export default function PaymentsPage() {
                   </td></tr>
                 ) : (
                   allProjects.map((p) => (
-                    <tr key={p.id}>
-                      <td className="font-semibold text-slate-900">
+                    <tr
+                      key={p.id}
+                      onClick={() => router.push(`/pagos?proyecto=${p.id}`)}
+                      className="cursor-pointer hover:bg-slate-50"
+                    >
+                      <td className="font-semibold text-slate-900" onClick={(e) => e.stopPropagation()}>
                         <Link href={`/proyectos/${p.id}`} className="hover:text-wood-600 flex items-center gap-2">
                           <FolderKanban size={14} className="text-wood-500" />
                           {p.nombreProyecto}
@@ -125,7 +171,7 @@ export default function PaymentsPage() {
                       </td>
                       <td>{p.client?.nombre || '—'}</td>
                       <td className="font-semibold">{p.sale ? formatCRC(p.sale.total) : '—'}</td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                               <Link href={`/pagos?proyecto=${p.id}`}
                                   prefetch={false} className="btn-ghost btn-sm">
                           Ver pagos <ArrowRight size={12} />
@@ -213,13 +259,13 @@ export default function PaymentsPage() {
         <div className="table-wrap">
           <table className="table">
             <thead>
-                          <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th>
+                          <tr><th>Fecha</th><th>Monto</th><th>Observaciones</th><th>Recibo</th><th>Respaldo</th>
                               <th>Acciones</th></tr>
             </thead>
             <tbody>
               {payments.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <EmptyState icon={<CreditCard size={24} />} title="Sin pagos registrados" />
                   </td>
                 </tr>
@@ -245,6 +291,11 @@ export default function PaymentsPage() {
                                     </button>
                         </div>
                       ) : '—'}
+                        </td>
+                        <td>
+                          <button className="btn-ghost btn-sm" onClick={() => openReceiptFiles(p)} title="Ver/agregar imágenes de respaldo">
+                            <Paperclip size={13} /> {p._count?.receiptFiles ? p._count.receiptFiles : ''}
+                          </button>
                         </td>
                         <td>
                             <button
@@ -288,6 +339,58 @@ export default function PaymentsPage() {
                 {saving ? <Spinner size="sm" /> : 'Registrar pago'}
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {receiptFilesPayment && (
+        <Modal
+          title={`Respaldo — pago ${formatCRC(receiptFilesPayment.monto)} (${formatDate(receiptFilesPayment.fechaPago)})`}
+          onClose={() => setReceiptFilesPayment(null)}
+          size="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Imágenes de respaldo del comprobante (capturas o fotos que el cliente envió). Solo visible para administración; se guardan en un almacenamiento privado, independiente del recibo en PDF.
+            </p>
+
+            <label className="btn-secondary btn-sm w-full justify-center cursor-pointer">
+              {uploadingReceiptFile ? <Spinner size="sm" /> : <><Paperclip size={14} /> Agregar imagen</>}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                className="hidden"
+                disabled={uploadingReceiptFile}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUploadReceiptFile(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
+            {loadingReceiptFiles ? (
+              <div className="flex justify-center py-4"><Spinner /></div>
+            ) : receiptFiles.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Sin imágenes de respaldo todavía</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {receiptFiles.map((f) => (
+                  <div key={f.id} className="relative group">
+                    <a href={f.url} target="_blank" rel="noopener noreferrer">
+                      <img src={f.url} alt={f.nombreArchivo} className="w-full h-20 object-cover rounded border" />
+                    </a>
+                    <button
+                      className="absolute -top-1.5 -right-1.5 bg-white border rounded-full p-0.5 text-danger shadow-sm"
+                      onClick={() => handleDeleteReceiptFile(f.id)}
+                      title="Eliminar imagen"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Modal>
       )}

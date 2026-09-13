@@ -1,11 +1,12 @@
 ﻿'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Clock, LogIn, LogOut, Calendar, Users, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { timesheetApi, usersApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { formatCRC } from '@/types';
 import { PageLoader, Spinner, Modal, FormGroup, Confirm, MoneyInput } from '@/components/ui';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 // ─── Helpers ─────────────────────────────────────────
 function formatTime(iso?: string | null): string {
@@ -49,12 +50,47 @@ const BREAK_ORDER: BreakType[] = ['desayuno', 'almuerzo', 'cafe'];
 
 // ─── Widget de fichaje (empleado/trabajador) ─────────
 function ClockWidget() {
+  const { status: pushStatus, subscribe: subscribePush } = usePushNotifications();
   const [entry, setEntry] = useState<any>(null);
   const [minutosPermitidos, setMinutosPermitidos] = useState<Record<string, number>>({ DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 });
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [elapsedStr, setElapsedStr] = useState('');
   const [breakElapsedStr, setBreakElapsedStr] = useState('');
+  const [breakMinutosElapsed, setBreakMinutosElapsed] = useState(0);
+  const [confirmingClockOut, setConfirmingClockOut] = useState(false);
+
+  // Alarma sonora cuando un descanso excede el tiempo permitido (foreground).
+  // El aviso fuera de la app (con esta pantalla cerrada) lo cubre Web Push,
+  // más abajo — ver usePushNotifications.
+  const alarmRef = useRef<HTMLAudioElement | null>(null);
+  const alarmInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    alarmRef.current = new Audio('/sounds/alarm.mp3');
+    alarmRef.current.loop = false;
+    return () => {
+      if (alarmInterval.current) clearInterval(alarmInterval.current);
+    };
+  }, []);
+
+  const startAlarm = () => {
+    if (alarmInterval.current) return;
+    const play = () => { alarmRef.current?.play().catch(() => {}); };
+    play();
+    alarmInterval.current = setInterval(play, 5000);
+  };
+
+  const stopAlarm = () => {
+    if (alarmInterval.current) {
+      clearInterval(alarmInterval.current);
+      alarmInterval.current = null;
+    }
+    if (alarmRef.current) {
+      alarmRef.current.pause();
+      alarmRef.current.currentTime = 0;
+    }
+  };
 
     const load = () => {
         timesheetApi.today().then((res: any) => {
@@ -93,20 +129,32 @@ function ClockWidget() {
 
   // Contador específico del descanso activo, con aviso de exceso
   useEffect(() => {
-    if (!activeBreak || !entry) { setBreakElapsedStr(''); return; }
+    if (!activeBreak || !entry) {
+      setBreakElapsedStr('');
+      setBreakMinutosElapsed(0);
+      stopAlarm();
+      return;
+    }
     const cfg = BREAK_CONFIG[activeBreak];
     const startVal = entry[cfg.startField];
-    if (!startVal) { setBreakElapsedStr(''); return; }
+    if (!startVal) {
+      setBreakElapsedStr('');
+      setBreakMinutosElapsed(0);
+      stopAlarm();
+      return;
+    }
     const update = () => {
       const ms = Date.now() - new Date(startVal).getTime();
       const m = Math.floor(ms / 60000);
       const s = Math.floor((ms % 60000) / 1000);
       setBreakElapsedStr(`${m}:${String(s).padStart(2,'0')}`);
+      setBreakMinutosElapsed(m);
+      if (m >= minutosPermitidos[cfg.policyKey]) startAlarm();
     };
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [activeBreak, entry]);
+  }, [activeBreak, entry, minutosPermitidos]);
 
   const handleAction = async (action: () => Promise<any>) => {
     setWorking(true);
@@ -122,9 +170,13 @@ function ClockWidget() {
   };
 
   const handleClockIn = () => handleAction(() => timesheetApi.clockIn());
-  const handleClockOut = () => handleAction(() => timesheetApi.clockOut(entry.id));
+  const doClockOut = () => handleAction(() => timesheetApi.clockOut(entry.id));
+  const handleClockOut = () => setConfirmingClockOut(true);
   const handleStartBreak = (tipo: BreakType) => handleAction(() => timesheetApi.startBreak(entry.id, tipo));
-  const handleEndBreak = (tipo: BreakType) => handleAction(() => timesheetApi.endBreak(entry.id, tipo));
+  const handleEndBreak = (tipo: BreakType) => {
+    stopAlarm();
+    return handleAction(() => timesheetApi.endBreak(entry.id, tipo));
+  };
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
 
@@ -143,6 +195,17 @@ function ClockWidget() {
       <h2 className="font-display font-bold text-slate-900 flex items-center gap-2">
         <Clock size={18} className="text-wood-500" /> Mi jornada de hoy
       </h2>
+
+      {pushStatus === 'unsubscribed' && (
+        <button className="btn-secondary btn-sm w-full justify-center" onClick={subscribePush}>
+          🔔 Activar avisos de descanso (aunque cierre la app)
+        </button>
+      )}
+      {pushStatus === 'denied' && (
+        <p className="text-xs text-amber-600 text-center">
+          Bloqueaste las notificaciones. Actívalas en los ajustes del teléfono/navegador para recibir el aviso cuando cierres la app.
+        </p>
+      )}
 
       {/* Estado / cronómetro principal */}
       <div className={`rounded-xl p-5 text-center ${
@@ -169,6 +232,11 @@ function ClockWidget() {
             <p className="text-xs text-slate-500 mt-1">
               {minutosPermitidos[BREAK_CONFIG[activeBreak].policyKey]} min incluidos en la jornada paga
             </p>
+            {breakMinutosElapsed >= minutosPermitidos[BREAK_CONFIG[activeBreak].policyKey] && (
+              <div className="bg-red-600 text-white rounded-lg p-4 text-center animate-pulse font-bold mt-3">
+                🚨 {BREAK_CONFIG[activeBreak].label.toUpperCase()} TERMINÓ. MARQUE "FINALIZAR {BREAK_CONFIG[activeBreak].label.toUpperCase()}".
+              </div>
+            )}
           </>
         )}
 
@@ -255,6 +323,15 @@ function ClockWidget() {
           <p className="text-xs text-slate-400 text-center">Jornada registrada ✓</p>
         )}
       </div>
+
+      {confirmingClockOut && (
+        <Confirm
+          message="¿Está seguro de que desea finalizar su jornada laboral?"
+          onConfirm={() => { setConfirmingClockOut(false); doClockOut(); }}
+          onCancel={() => setConfirmingClockOut(false)}
+          loading={working}
+        />
+      )}
     </div>
   );
 }
@@ -342,7 +419,7 @@ function AdminPanel() {
   const [selectedUser, setSelectedUser] = useState('');
   const [editEntry, setEditEntry] = useState<any | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<any | null>(null);
-  const [editingWage, setEditingWage] = useState<{ userId: string; nombre: string; tarifaHora: string } | null>(null);
+  const [editingWage, setEditingWage] = useState<{ userId: string; nombre: string; tarifaHora: string; tarifaHoraExceso: string } | null>(null);
   const [savingWage, setSavingWage] = useState(false);
   const [working, setWorking] = useState(false);
   const [closingWeek, setClosingWeek] = useState(false);
@@ -350,6 +427,9 @@ function AdminPanel() {
   const [confirmClose, setConfirmClose] = useState(false);
   const [breakPolicy, setBreakPolicy] = useState<Record<string, number>>({ DESAYUNO: 20, ALMUERZO: 40, CAFE: 10 });
   const [editingPolicy, setEditingPolicy] = useState<Record<string, string> | null>(null);
+  const [umbralHoras, setUmbralHoras] = useState(50);
+  const [editingUmbral, setEditingUmbral] = useState<string | null>(null);
+  const [savingUmbral, setSavingUmbral] = useState(false);
   const [savingPolicy, setSavingPolicy] = useState(false);
 
   const weekEnd = endOfWeekDate(weekCursor);
@@ -363,10 +443,12 @@ function AdminPanel() {
       timesheetApi.report({ userId: selectedUser || undefined, desde, hasta }),
       usersApi.list(),
       timesheetApi.breakPolicy(),
-    ]).then(([repRes, usr, policy]) => {
+      timesheetApi.wageThreshold(),
+    ]).then(([repRes, usr, policy, threshold]) => {
       setReport(repRes.data);
       setUsers(usr.filter((u: any) => u.activo));
       setBreakPolicy(policy);
+      setUmbralHoras(threshold.umbralHoras);
     }).finally(() => setLoading(false));
   };
 
@@ -380,7 +462,11 @@ function AdminPanel() {
     if (!editingWage || !editingWage.tarifaHora) return;
     setSavingWage(true);
     try {
-      await timesheetApi.setWage(editingWage.userId, Number(editingWage.tarifaHora));
+      await timesheetApi.setWage(
+        editingWage.userId,
+        Number(editingWage.tarifaHora),
+        editingWage.tarifaHoraExceso ? Number(editingWage.tarifaHoraExceso) : null
+      );
       toast.success('Tarifa actualizada');
       setEditingWage(null);
       load();
@@ -388,6 +474,21 @@ function AdminPanel() {
       toast.error(err.response?.data?.error || 'Error');
     } finally {
       setSavingWage(false);
+    }
+  };
+
+  const handleSaveUmbral = async () => {
+    if (!editingUmbral) return;
+    setSavingUmbral(true);
+    try {
+      await timesheetApi.setWageThreshold(Number(editingUmbral));
+      toast.success('Umbral actualizado');
+      setUmbralHoras(Number(editingUmbral));
+      setEditingUmbral(null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Error al guardar');
+    } finally {
+      setSavingUmbral(false);
     }
   };
 
@@ -405,7 +506,14 @@ function AdminPanel() {
       await timesheetApi.updateEntry(editEntry.id, {
         horaEntrada: localToISO(editEntry.horaEntradaEdit),
         horaSalida: localToISO(editEntry.horaSalidaEdit),
+        desayunoInicio: localToISO(editEntry.desayunoInicioEdit),
+        desayunoFin: localToISO(editEntry.desayunoFinEdit),
+        almuerzoInicio: localToISO(editEntry.almuerzoInicioEdit),
+        almuerzoFin: localToISO(editEntry.almuerzoFinEdit),
+        cafeInicio: localToISO(editEntry.cafeInicioEdit),
+        cafeFin: localToISO(editEntry.cafeFinEdit),
         observaciones: editEntry.obsEdit,
+        motivo: editEntry.motivoEdit || undefined,
       });
       toast.success('Registro actualizado');
       setEditEntry(null);
@@ -513,6 +621,13 @@ function AdminPanel() {
             >
               ⚙️ Descansos
             </button>
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setEditingUmbral(String(umbralHoras))}
+              title="Configurar umbral de horas para tarifa de exceso"
+            >
+              ⚙️ Umbral tarifa
+            </button>
           </div>
         </div>
 
@@ -561,14 +676,18 @@ function AdminPanel() {
                       {row.totalExcedente > 0 && <span className="text-slate-500 text-xs font-normal ml-1">· {row.totalExcedente}' adicionales de descanso</span>}
                     </p>
                     {row.tarifaHora ? (
-                      <p className="text-xs text-slate-500">{formatCRC(row.tarifaHora)}/h = <span className="font-bold text-green-600">{formatCRC(row.salarioCalculado)}</span></p>
+                      <p className="text-xs text-slate-500">
+                        {formatCRC(row.tarifaHora)}/h
+                        {row.tarifaHoraExceso ? <> · {formatCRC(row.tarifaHoraExceso)}/h tras {row.umbralHoras}h</> : ''}
+                        {' '}= <span className="font-bold text-green-600">{formatCRC(row.salarioCalculado)}</span>
+                      </p>
                     ) : (
                       <p className="text-xs text-slate-400">Sin tarifa configurada</p>
                     )}
                   </div>
                   <button
                     className="btn-secondary btn-sm"
-                    onClick={() => setEditingWage({ userId: row.user.id, nombre: row.user.nombre, tarifaHora: String(row.tarifaHora || '') })}
+                    onClick={() => setEditingWage({ userId: row.user.id, nombre: row.user.nombre, tarifaHora: String(row.tarifaHora || ''), tarifaHoraExceso: String(row.tarifaHoraExceso || '') })}
                   >
                     <Pencil size={13} /> Tarifa
                   </button>
@@ -602,7 +721,14 @@ function AdminPanel() {
                                 ...e,
                                 horaEntradaEdit: toLocalDatetimeInput(e.horaEntrada),
                                 horaSalidaEdit: toLocalDatetimeInput(e.horaSalida),
+                                desayunoInicioEdit: toLocalDatetimeInput(e.desayunoInicio),
+                                desayunoFinEdit: toLocalDatetimeInput(e.desayunoFin),
+                                almuerzoInicioEdit: toLocalDatetimeInput(e.almuerzoInicio),
+                                almuerzoFinEdit: toLocalDatetimeInput(e.almuerzoFin),
+                                cafeInicioEdit: toLocalDatetimeInput(e.cafeInicio),
+                                cafeFinEdit: toLocalDatetimeInput(e.cafeFin),
                                 obsEdit: e.observaciones || '',
+                                motivoEdit: '',
                               })} title="Editar">
                                 <Pencil size={12} />
                               </button>
@@ -632,8 +758,11 @@ function AdminPanel() {
       {editingWage && (
         <Modal title={`Tarifa de ${editingWage.nombre}`} onClose={() => setEditingWage(null)} size="sm">
           <div className="space-y-4">
-            <FormGroup label="Tarifa por hora (₡)" required>
+            <FormGroup label={`Tarifa hasta ${umbralHoras}h por semana (₡)`} required>
               <MoneyInput value={editingWage.tarifaHora} onChange={(v) => setEditingWage((p) => p ? ({ ...p, tarifaHora: v }) : p)} placeholder="Ej: 3 000" />
+            </FormGroup>
+            <FormGroup label={`Tarifa por exceso de ${umbralHoras}h por semana (₡)`}>
+              <MoneyInput value={editingWage.tarifaHoraExceso} onChange={(v) => setEditingWage((p) => p ? ({ ...p, tarifaHoraExceso: v }) : p)} placeholder="Opcional — si se deja vacío, se usa la tarifa normal" />
             </FormGroup>
             <p className="text-xs text-slate-500">El salario calculado = horas trabajadas × tarifa/hora. Solo visible para el administrador.</p>
             <div className="flex justify-end gap-2">
@@ -658,9 +787,43 @@ function AdminPanel() {
               <input type="datetime-local" className="input" value={editEntry.horaSalidaEdit}
                 onChange={(e) => setEditEntry((p: any) => ({ ...p, horaSalidaEdit: e.target.value }))} />
             </FormGroup>
+
+            <p className="text-xs font-semibold text-slate-500 pt-1">Descansos</p>
+            <div className="grid grid-cols-2 gap-3">
+              <FormGroup label="☕ Desayuno — inicio">
+                <input type="datetime-local" className="input" value={editEntry.desayunoInicioEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, desayunoInicioEdit: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="☕ Desayuno — fin">
+                <input type="datetime-local" className="input" value={editEntry.desayunoFinEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, desayunoFinEdit: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="🍽️ Almuerzo — inicio">
+                <input type="datetime-local" className="input" value={editEntry.almuerzoInicioEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, almuerzoInicioEdit: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="🍽️ Almuerzo — fin">
+                <input type="datetime-local" className="input" value={editEntry.almuerzoFinEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, almuerzoFinEdit: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="☕ Café — inicio">
+                <input type="datetime-local" className="input" value={editEntry.cafeInicioEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, cafeInicioEdit: e.target.value }))} />
+              </FormGroup>
+              <FormGroup label="☕ Café — fin">
+                <input type="datetime-local" className="input" value={editEntry.cafeFinEdit}
+                  onChange={(e) => setEditEntry((p: any) => ({ ...p, cafeFinEdit: e.target.value }))} />
+              </FormGroup>
+            </div>
+
             <FormGroup label="Observaciones">
               <input className="input" value={editEntry.obsEdit}
                 onChange={(e) => setEditEntry((p: any) => ({ ...p, obsEdit: e.target.value }))} />
+            </FormGroup>
+            <FormGroup label="Motivo de la corrección (queda en la bitácora)">
+              <input className="input" value={editEntry.motivoEdit}
+                placeholder="Ej: el trabajador olvidó marcar el fin del almuerzo"
+                onChange={(e) => setEditEntry((p: any) => ({ ...p, motivoEdit: e.target.value }))} />
             </FormGroup>
             <div className="flex justify-end gap-2">
               <button className="btn-secondary" onClick={() => setEditEntry(null)}>Cancelar</button>
@@ -712,6 +875,26 @@ function AdminPanel() {
               <button className="btn-secondary" onClick={() => setEditingPolicy(null)}>Cancelar</button>
               <button className="btn-primary" onClick={handleSavePolicy} disabled={savingPolicy}>
                 {savingPolicy ? <Spinner size="sm" /> : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editingUmbral !== null && (
+        <Modal title="Umbral de horas semanales" onClose={() => setEditingUmbral(null)} size="sm">
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Cantidad de horas semanales a partir de la cual se aplica la tarifa de exceso configurada por trabajador.
+            </p>
+            <FormGroup label="Horas" required>
+              <input type="number" min={1} className="input" value={editingUmbral}
+                onChange={(e) => setEditingUmbral(e.target.value)} />
+            </FormGroup>
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setEditingUmbral(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={handleSaveUmbral} disabled={savingUmbral}>
+                {savingUmbral ? <Spinner size="sm" /> : 'Guardar'}
               </button>
             </div>
           </div>

@@ -18,6 +18,7 @@ import {
     X,
     Calendar,
     Clock,
+    ScrollText,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import AuthGuard from '@/components/AuthGuard';
@@ -37,6 +38,7 @@ const NAV = [
 const NAV_ADMIN = [
     { to: '/usuarios', icon: Users, label: 'Usuarios' },
     { to: '/catalogo', icon: Settings, label: 'Catálogo & Precios' },
+    { to: '/bitacoras', icon: ScrollText, label: 'Bitácoras' },
 ];
 
 export default function AppLayout({

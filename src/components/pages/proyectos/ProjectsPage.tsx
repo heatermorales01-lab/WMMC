@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FolderKanban, Search, ArrowRight } from 'lucide-react';
 import { projectsApi } from '@/lib/api';
 import type { Project, ProjectStatus } from '@/types';
@@ -18,6 +19,7 @@ const STATUSES: { value: string; label: string }[] = [
 ];
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [filtered, setFiltered] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,9 +97,13 @@ export default function ProjectsPage() {
                 </tr>
               ) : (
                 filtered.map((p) => (
-                  <tr key={p.id}>
+                  <tr
+                    key={p.id}
+                    onClick={() => router.push(`/proyectos/${p.id}`)}
+                    className="cursor-pointer hover:bg-slate-50"
+                  >
                     <td className="font-semibold text-slate-900">{p.nombreProyecto}</td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <Link href={`/clientes/${p.clientId}`} className="text-wood-600 hover:underline">
                         {p.client?.nombre}
                       </Link>
@@ -105,7 +111,7 @@ export default function ProjectsPage() {
                     <td className="text-slate-500">{p.ubicacion || '—'}</td>
                     <td><ProjectBadge status={p.estado} /></td>
                     <td>{formatDate(p.fechaInstalacionTentativa)}</td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <Link href={`/proyectos/${p.id}`} className="btn-ghost btn-sm">
                         Ver <ArrowRight size={12} />
                       </Link>

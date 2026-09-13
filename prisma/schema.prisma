@@ -8,7 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DIRECT_URL")
 }
 
 // =====================================
@@ -42,8 +42,96 @@ model User {
   weeklySummaries  WeeklyTimesheetSummary[]
   calendarEvents   CalendarEvent[]
   wageConfig       UserWageConfig?
+  pushSubscriptions PushSubscription[]
+  catalogAuditLogs   CatalogAuditLog[]
+  inventoryAuditLogs InventoryAuditLog[]
+  timesheetAuditLogsAsAdmin      TimesheetAuditLog[] @relation("TimesheetAuditAdmin")
+  timesheetAuditLogsAsTrabajador TimesheetAuditLog[] @relation("TimesheetAuditTrabajador")
 
   @@map("users")
+}
+
+// =====================================
+// BITÁCORAS / AUDITORÍA
+// =====================================
+
+// Bitácora de catálogo y precios (punto 10)
+model CatalogAuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  modulo       String   @db.VarChar(50) // MATERIALES | TIPOS_MUEBLE | TABLETOPS | EXTRAS | SERVICIOS | PRECIOS
+  accion       String   @db.VarChar(20) // CREAR | EDITAR | ELIMINAR
+  entidadId    String?  @map("entidad_id") @db.Uuid
+  entidadNombre String? @map("entidad_nombre")
+  valorAnterior Json?   @map("valor_anterior")
+  valorNuevo    Json?   @map("valor_nuevo")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("catalog_audit_logs")
+}
+
+// Bitácora de inventario (punto 10)
+model InventoryAuditLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  itemId        String?  @map("item_id") @db.Uuid
+  itemNombre    String   @map("item_nombre")
+  tipoMovimiento String  @map("tipo_movimiento") @db.VarChar(20) // ENTRADA | SALIDA | CREAR | EDITAR | ELIMINAR
+  cantidad      Int?
+  detalle       Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("inventory_audit_logs")
+}
+
+// Bitácora de correcciones manuales de horario por el admin (punto 9)
+model TimesheetAuditLog {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId          String   @map("admin_id") @db.Uuid
+  trabajadorId     String   @map("trabajador_id") @db.Uuid
+  timesheetEntryId String   @map("timesheet_entry_id") @db.Uuid
+  campo            String   @db.VarChar(50)
+  valorAnterior    String?  @map("valor_anterior")
+  valorNuevo       String?  @map("valor_nuevo")
+  motivo           String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  admin      User @relation("TimesheetAuditAdmin", fields: [adminId], references: [id])
+  trabajador User @relation("TimesheetAuditTrabajador", fields: [trabajadorId], references: [id])
+
+  @@map("timesheet_audit_logs")
+}
+// celular, tablet, etc.). Se usan para avisar de descansos vencidos
+// aunque el trabajador tenga la PWA cerrada.
+model PushSubscription {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}
+
+// Evita reenviar el push cada minuto mientras el descanso siga vencido:
+// una fila por (entrada de horario, tipo de descanso) una vez notificado.
+// No toca TimesheetEntry ni las rutas de inicio/fin de descanso — es
+// puramente aditivo, así que no hay riesgo de romper esa lógica existente.
+model PushAlertLog {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  timesheetEntryId String   @map("timesheet_entry_id") @db.Uuid
+  tipo             String   @db.VarChar(20) // DESAYUNO | ALMUERZO | CAFE
+  sentAt           DateTime @default(now()) @map("sent_at")
+
+  @@unique([timesheetEntryId, tipo])
+  @@map("push_alert_logs")
 }
 
 // =====================================
@@ -60,6 +148,7 @@ model Client {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   projects Project[]
+  paymentReceiptFiles PaymentReceiptFile[]
 
   @@map("clients")
 }
@@ -326,8 +415,33 @@ model Payment {
 
   project Project @relation(fields: [projectId], references: [id])
   receipt Receipt?
+  receiptFiles PaymentReceiptFile[]
 
   @@map("payments")
+}
+
+// Imágenes de respaldo de comprobantes de pago (capturas/fotos que el
+// cliente envía). Independiente del `comprobanteUrl` de texto libre que
+// ya existía (RN09) y del PDF generado por el sistema (`Receipt`) — esto
+// es solo almacenamiento de respaldo, visible únicamente para
+// administración (el panel de Pagos ya está bloqueado para TRABAJADOR).
+model PaymentReceiptFile {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId     String   @map("payment_id") @db.Uuid
+  // Denormalizado desde project.clientId para poder consultar/filtrar
+  // por cliente sin tener que pasar por Project — y para dejar explícita
+  // la relación con el cliente que pide el punto 4.
+  clientId      String?  @map("client_id") @db.Uuid
+  storagePath   String   @map("storage_path")
+  nombreArchivo String   @map("nombre_archivo")
+  mimeType      String   @map("mime_type")
+  subidoPor     String   @map("subido_por") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  client  Client? @relation(fields: [clientId], references: [id])
+
+  @@map("payment_receipt_files")
 }
 
 // =====================================
@@ -448,6 +562,9 @@ model WeeklyTimesheetSummary {
   semanaFin     DateTime @map("semana_fin") @db.Date
   totalHoras    Decimal  @map("total_horas") @db.Decimal(6, 2)
   tarifaHora    Decimal? @map("tarifa_hora") @db.Decimal(10, 2)
+  // Se guarda también la tarifa de exceso vigente al momento del cierre,
+  // para que el resumen archivado sea auditable aunque luego cambien las tarifas.
+  tarifaHoraExceso Decimal? @map("tarifa_hora_exceso") @db.Decimal(10, 2)
   salarioTotal  Decimal? @map("salario_total") @db.Decimal(12, 2)
   cantidadDias  Int      @map("cantidad_dias")
   generadoPor   String   @map("generado_por") @db.Uuid
@@ -460,14 +577,28 @@ model WeeklyTimesheetSummary {
 
 // Configuración de tarifa por hora por usuario
 model UserWageConfig {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String   @unique @map("user_id") @db.Uuid
-  tarifaHora    Decimal  @map("tarifa_hora") @db.Decimal(10, 2)
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  tarifaHora        Decimal  @map("tarifa_hora") @db.Decimal(10, 2)
+  // Tarifa aplicada a las horas trabajadas por encima del umbral semanal
+  // (WageThreshold.umbralHoras). Si es null, se usa tarifaHora para todo.
+  tarifaHoraExceso  Decimal? @map("tarifa_hora_exceso") @db.Decimal(10, 2)
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id])
 
   @@map("user_wage_configs")
+}
+
+// Configuración global (una sola fila) del umbral de horas semanales a
+// partir del cual se aplica la tarifa de exceso. Editable por el admin
+// para no dejarlo fijo en el código (hoy: 50 horas).
+model WageThreshold {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  umbralHoras Int      @default(50) @map("umbral_horas")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("wage_thresholds")
 }
 
 // =====================================

@@ -121,6 +121,18 @@ export const paymentsApi = {
         api.post(`/projects/${projectId}/payment-schedule`, { cuotas }).then((r) => r.data.data),
     delete: (id: string) =>
         api.delete(`/payments/${id}`).then((r) => r.data),
+  // Respaldo de comprobantes (imágenes) — separado del comprobanteUrl de texto y del PDF generado
+  listReceiptFiles: (paymentId: string) =>
+    api.get(`/payments/${paymentId}/receipt-files`).then((r) => r.data.data),
+  uploadReceiptFile: (paymentId: string, file: globalThis.File) => {
+    const formData = new FormData();
+    formData.append('archivo', file);
+    return api.post(`/payments/${paymentId}/receipt-files`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data.data);
+  },
+  deleteReceiptFile: (fileId: string) =>
+    api.delete(`/payments/receipt-files/${fileId}`).then((r) => r.data),
 };
 
 
@@ -179,6 +191,9 @@ export const materialPricesApi = {
 export const inventoryApi = {
   list: () => api.get('/inventory').then((r) => r.data.data),
   create: (data: any) => api.post('/inventory', data).then((r) => r.data.data),
+  update: (id: string, data: any) =>
+    api.patch(`/inventory/${id}`, data).then((r) => r.data.data),
+  delete: (id: string) => api.delete(`/inventory/${id}`).then((r) => r.data),
   updateStock: (id: string, data: any) =>
     api.patch(`/inventory/${id}/stock`, data).then((r) => r.data.data),
   adjust: (id: string, cantidad: number, operacion: 'ENTRADA' | 'SALIDA') =>
@@ -186,6 +201,11 @@ export const inventoryApi = {
 };
 
 // ─── USUARIOS ──────────────────────────────────────────
+export const auditApi = {
+  list: (tipo: 'catalogo' | 'inventario' | 'horario', filters?: { userId?: string; desde?: string; hasta?: string }) =>
+    api.get('/audit-logs', { params: { tipo, ...filters } }).then((r) => r.data.data),
+};
+
 export const usersApi = {
   list: () => api.get('/users').then((r) => r.data.data),
   roles: () => api.get('/roles').then((r) => r.data.data),
@@ -260,6 +280,11 @@ export const calendarApi = {
 };
 
 // ─── TIMESHEET ──────────────────────────────────────────
+export const pushApi = {
+  subscribe: (subscriptionJson: any) => api.post('/push/subscribe', subscriptionJson).then((r) => r.data.data),
+  unsubscribe: (endpoint: string) => api.delete('/push/subscribe', { data: { endpoint } }).then((r) => r.data),
+};
+
 export const timesheetApi = {
   // Empleado/Trabajador
   today: () => api.get('/timesheet/today').then((r) => r.data),
@@ -278,8 +303,11 @@ export const timesheetApi = {
   // Admin
   report: (params?: { userId?: string; desde?: string; hasta?: string }) =>
     api.get('/timesheet/report', { params }).then((r) => r.data),
-  setWage: (userId: string, tarifaHora: number) =>
-    api.put(`/timesheet/wage/${userId}`, { tarifaHora }).then((r) => r.data.data),
+  setWage: (userId: string, tarifaHora: number, tarifaHoraExceso?: number | null) =>
+    api.put(`/timesheet/wage/${userId}`, { tarifaHora, tarifaHoraExceso }).then((r) => r.data.data),
+  wageThreshold: () => api.get('/timesheet/wage-threshold').then((r) => r.data.data),
+  setWageThreshold: (umbralHoras: number) =>
+    api.put('/timesheet/wage-threshold', { umbralHoras }).then((r) => r.data),
   updateEntry: (id: string, data: any) =>
     api.put(`/timesheet/entry/${id}`, data).then((r) => r.data),
   deleteEntry: (id: string) =>

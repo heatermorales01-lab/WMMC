@@ -119,12 +119,16 @@ export default function ClientDetailPage({ id }: { id: string }) {
                 </tr>
               ) : (
                 client.projects.map((p) => (
-                  <tr key={p.id}>
+                  <tr
+                    key={p.id}
+                    onClick={() => router.push(`/proyectos/${p.id}`)}
+                    className="cursor-pointer hover:bg-slate-50"
+                  >
                     <td className="font-semibold text-slate-900">{p.nombreProyecto}</td>
                     <td>{p.ubicacion || '—'}</td>
                     <td><ProjectBadge status={p.estado} /></td>
                     <td>{formatDate(p.fechaInstalacionTentativa)}</td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <Link href={`/proyectos/${p.id}`} className="btn-ghost btn-sm">Ver</Link>
                     </td>
                   </tr>
