@@ -32,7 +32,7 @@ export const authApi = {
 
 // ─── CLIENTES ──────────────────────────────────────────
 export const clientsApi = {
-  list: () => api.get('/clients').then((r) => r.data.data),
+  list: (sort?: 'nombre' | 'recientes') => api.get('/clients', { params: sort ? { sort } : {} }).then((r) => r.data.data),
   get: (id: string) => api.get(`/clients/${id}`).then((r) => r.data.data),
   create: (data: any) => api.post('/clients', data).then((r) => r.data.data),
   update: (id: string, data: any) => api.put(`/clients/${id}`, data).then((r) => r.data.data),

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PDF de Cotización — WM Muebles Contemporáneos
  */
 import { TDocumentDefinitions } from 'pdfmake/interfaces';
@@ -128,17 +128,24 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
     }
   });
 
-  // Filas de servicios
-  const svcRows: any[][] = quotation.quotationServices.length > 0 ? [
-    [{ text: 'SERVICIOS', fontSize: 8, bold: true, color: C.slate700, colSpan: 5, fillColor: C.slate50 }, {},{},{},{}],
-    ...quotation.quotationServices.map(qs => [
-      { text: '', border:[false,false,false,false] },
-      { text: `${qs.service.nombre} × ${qs.cantidad}`, fontSize: 9 },
-      { text: '', alignment: 'center' },
-      { text: '', alignment: 'right' },
-      { text: crc(qs.subtotal), alignment: 'right', fontSize: 9, bold: true },
-    ]),
-  ] : [];
+    // Filas de servicios
+    const svcRows: any[][] = quotation.quotationServices.length > 0 ? [
+        [{ text: 'SERVICIOS', fontSize: 8, bold: true, color: C.slate700, colSpan: 5, fillColor: C.slate50 }, {}, {}, {}, {}],
+        ...quotation.quotationServices.map(qs => {
+            const esTransporte = qs.service.nombre.toLowerCase().includes('transporte');
+            const etiqueta = esTransporte
+                ? `${qs.service.nombre} — ${qs.cantidad} km`
+                : `${qs.service.nombre} × ${qs.cantidad}`;
+            const precioPorKm = qs.cantidad > 0 ? Number(qs.subtotal) / Number(qs.cantidad) : 0;
+            return [
+                { text: '', border: [false, false, false, false] },
+                { text: etiqueta, fontSize: 9 },
+                { text: '', alignment: 'center' },
+                { text: esTransporte ? crc(precioPorKm) + '/km' : '', alignment: 'right', fontSize: 8, color: C.slate500 },
+                { text: crc(qs.subtotal), alignment: 'right', fontSize: 9, bold: true },
+            ];
+        }),
+    ] : [];
 
   const doc: any = {
     pageSize: 'LETTER',

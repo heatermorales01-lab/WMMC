@@ -1,4 +1,4 @@
-import webpush from 'web-push';
+﻿import webpush from 'web-push';
 import { prisma } from '@/lib/prisma';
 
 let vapidConfigured = false;
@@ -25,10 +25,11 @@ export async function sendPushToUser(userId: string, payload: Record<string, any
   await Promise.all(
     subs.map(async (sub: any) => {
       try {
-        await webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify(payload)
-        );
+          await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              JSON.stringify(payload),
+              { urgency: 'high', TTL: 60 }
+          );
       } catch (err: any) {
         // 404/410 = la suscripción ya no es válida (el usuario desinstaló la PWA, etc.)
         if (err?.statusCode === 404 || err?.statusCode === 410) {
