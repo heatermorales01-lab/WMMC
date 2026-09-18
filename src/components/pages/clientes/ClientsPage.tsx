@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,7 @@ type Form = z.infer<typeof schema>;
 
 export default function ClientsPage() {
   const router = useRouter();
+  const [sort, setSort] = useState<'nombre' | 'recientes'>('nombre');
   const [clients, setClients] = useState<Client[]>([]);
   const [filtered, setFiltered] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,17 +36,18 @@ export default function ClientsPage() {
     resolver: zodResolver(schema),
   });
 
-  const load = async () => {
-    try {
-      const data = await clientsApi.list();
-      setClients(data);
-      setFiltered(data);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const load = async () => {
+        setLoading(true);
+        try {
+            const data = await clientsApi.list(sort);
+            setClients(data);
+            setFiltered(data);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  useEffect(() => { load(); }, []);
+    useEffect(() => { load(); }, [sort]);
 
   useEffect(() => {
     const q = search.toLowerCase();
@@ -102,16 +104,26 @@ export default function ClientsPage() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          className="input pl-9"
-          placeholder="Buscar por nombre, correo..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+          {/* Search + orden */}
+          <div className="flex flex-wrap items-center gap-3">
+              <div className="relative max-w-sm flex-1 min-w-[200px]">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                      className="input pl-9"
+                      placeholder="Buscar por nombre, correo..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                  />
+              </div>
+              <select
+                  className="input w-auto text-sm"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as 'nombre' | 'recientes')}
+              >
+                  <option value="nombre">Nombre — A-Z</option>
+                  <option value="recientes">Más recientes</option>
+              </select>
+          </div>
 
       {/* Table */}
       <div className="card">
