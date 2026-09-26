@@ -286,15 +286,16 @@ export const pushApi = {
 };
 
 export const timesheetApi = {
-  // Empleado/Trabajador
-  today: () => api.get('/timesheet/today').then((r) => r.data),
-  clockIn: () => api.post('/timesheet/entry').then((r) => r.data),
-  clockOut: (id: string, observaciones?: string) =>
-    api.patch(`/timesheet/entry/${id}/clock-out`, { observaciones }).then((r) => r.data),
-  startBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe') =>
-    api.patch(`/timesheet/entry/${id}/break/${tipo}/start`).then((r) => r.data),
-  endBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe') =>
-    api.patch(`/timesheet/entry/${id}/break/${tipo}/end`).then((r) => r.data),
+    // Empleado/Trabajador
+    today: () => api.get('/timesheet/today').then((r) => r.data),
+    clockIn: (coords?: { lat: number; lng: number }) =>
+        api.post('/timesheet/entry', coords || {}).then((r) => r.data),
+    clockOut: (id: string, observaciones?: string, coords?: { lat: number; lng: number }) =>
+        api.patch(`/timesheet/entry/${id}/clock-out`, { observaciones, ...coords }).then((r) => r.data),
+    startBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe', coords?: { lat: number; lng: number }) =>
+        api.patch(`/timesheet/entry/${id}/break/${tipo}/start`, coords || {}).then((r) => r.data),
+    endBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe', coords?: { lat: number; lng: number }) =>
+        api.patch(`/timesheet/entry/${id}/break/${tipo}/end`, coords || {}).then((r) => r.data),
   myHistory: (desde?: string, hasta?: string) =>
     api.get('/timesheet/my', { params: { desde, hasta } }).then((r) => r.data.data),
   breakPolicy: () => api.get('/timesheet/break-policy').then((r) => r.data.data),

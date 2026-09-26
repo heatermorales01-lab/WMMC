@@ -8,10 +8,13 @@ import {
     getMinutosPermitidos,
     now,
 } from '@/lib/timesheet-helpers';
+import { validarUbicacionTaller } from '@/lib/geofence';
 
 export const PATCH = withAuth(async (req, { params }, user) => {
     try {
-        const { observaciones } = await req.json().catch(() => ({}));
+        const { observaciones, lat, lng } = await req.json().catch(() => ({}));
+        const ubicacion = validarUbicacionTaller(lat, lng);
+        if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
 
         const entry = await (prisma as any).timesheetEntry.findUnique({
             where: { id: params.id }

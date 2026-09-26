@@ -156,27 +156,50 @@ function ClockWidget() {
     return () => clearInterval(interval);
   }, [activeBreak, entry, minutosPermitidos]);
 
-  const handleAction = async (action: () => Promise<any>) => {
-    setWorking(true);
-    try {
-      const res = await action();
-      toast.success(res.message);
-      load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Error al registrar');
-    } finally {
-      setWorking(false);
-    }
-  };
+    // Ubicación GPS — requerida para marcar entrada/salida/descansos, solo
+    // dentro del taller. Se pide justo antes de cada acción (no se guarda
+    // en memoria) para que sea siempre la posición actual del dispositivo.
+    const obtenerUbicacion = (): Promise<{ lat: number; lng: number }> => {
+        return new Promise((resolve, reject) => {
+            if (!('geolocation' in navigator)) {
+                reject(new Error('Este dispositivo/navegador no soporta ubicación GPS.'));
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                (err) => {
+                    const msg = err.code === err.PERMISSION_DENIED
+                        ? 'Debes dar permiso de ubicación para poder marcar. Actívalo en los ajustes del navegador/teléfono.'
+                        : 'No se pudo obtener tu ubicación. Verifica que el GPS esté activado.';
+                    reject(new Error(msg));
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        });
+    };
 
-  const handleClockIn = () => handleAction(() => timesheetApi.clockIn());
-  const doClockOut = () => handleAction(() => timesheetApi.clockOut(entry.id));
-  const handleClockOut = () => setConfirmingClockOut(true);
-  const handleStartBreak = (tipo: BreakType) => handleAction(() => timesheetApi.startBreak(entry.id, tipo));
-  const handleEndBreak = (tipo: BreakType) => {
-    stopAlarm();
-    return handleAction(() => timesheetApi.endBreak(entry.id, tipo));
-  };
+    const handleActionConUbicacion = async (action: (coords: { lat: number; lng: number }) => Promise<any>) => {
+        setWorking(true);
+        try {
+            const coords = await obtenerUbicacion();
+            const res = await action(coords);
+            toast.success(res.message);
+            load();
+        } catch (err: any) {
+            toast.error(err.response?.data?.error || err.message || 'Error al registrar');
+        } finally {
+            setWorking(false);
+        }
+    };
+
+    const handleClockIn = () => handleActionConUbicacion((coords) => timesheetApi.clockIn(coords));
+    const doClockOut = () => handleActionConUbicacion((coords) => timesheetApi.clockOut(entry.id, undefined, coords));
+    const handleClockOut = () => setConfirmingClockOut(true);
+    const handleStartBreak = (tipo: BreakType) => handleActionConUbicacion((coords) => timesheetApi.startBreak(entry.id, tipo, coords));
+    const handleEndBreak = (tipo: BreakType) => {
+        stopAlarm();
+        return handleActionConUbicacion((coords) => timesheetApi.endBreak(entry.id, tipo, coords));
+    };
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
 

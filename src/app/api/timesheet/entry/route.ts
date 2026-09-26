@@ -8,9 +8,13 @@ import {
     getFase,
     now,
 } from '@/lib/timesheet-helpers';
+import { validarUbicacionTaller } from '@/lib/geofence';
 
-export const POST = withAuth(async (_req, _ctx, user) => {
+export const POST = withAuth(async (req, _ctx, user) => {
     try {
+        const { lat, lng } = await req.json().catch(() => ({}));
+        const ubicacion = validarUbicacionTaller(lat, lng);
+        if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
 
         const current = now();
 

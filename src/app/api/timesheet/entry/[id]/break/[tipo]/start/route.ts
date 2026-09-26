@@ -7,11 +7,15 @@ import {
     BREAK_FIELDS,
     now,
 } from '@/lib/timesheet-helpers';
+import { validarUbicacionTaller } from '@/lib/geofence';
 
-export const PATCH = withAuth(async (_req, { params }, user) => {
-  try {
-    const fields = BREAK_FIELDS[params.tipo];
-    if (!fields) throw new AppError('Tipo de descanso inválido', 400);
+export const PATCH = withAuth(async (req, { params }, user) => {
+    try {
+        const { lat, lng } = await req.json().catch(() => ({}));
+        const ubicacion = validarUbicacionTaller(lat, lng);
+        if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
+
+        const fields = BREAK_FIELDS[params.tipo]; if (!fields) throw new AppError('Tipo de descanso inválido', 400);
     const entry = await (prisma as any).timesheetEntry.findUnique({ where: { id: params.id } });
     if (!entry) throw new AppError('Registro no encontrado', 404);
     if (entry.userId !== user.userId && user.roleName !== 'ADMINISTRADOR') throw new AppError('Sin permiso', 403);
