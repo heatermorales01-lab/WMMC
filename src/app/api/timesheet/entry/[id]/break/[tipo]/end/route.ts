@@ -9,12 +9,12 @@ import {
     getMinutosPermitidos,
     now,
 } from '@/lib/timesheet-helpers';
-import { validarUbicacionTaller } from '@/lib/geofence';
+import { validarUbicacionTallerMultiple } from '@/lib/geofence';
 
 export const PATCH = withAuth(async (req, { params }, user) => {
     try {
-        const { lat, lng } = await req.json().catch(() => ({}));
-        const ubicacion = validarUbicacionTaller(lat, lng);
+        const { muestras } = await req.json().catch(() => ({}));
+        const ubicacion = validarUbicacionTallerMultiple(muestras);
         if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
 
         const fields = BREAK_FIELDS[params.tipo]; if (!fields) throw new AppError('Tipo de descanso inválido', 400);

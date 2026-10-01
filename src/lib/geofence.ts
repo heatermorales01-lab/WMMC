@@ -44,9 +44,44 @@ export function validarUbicacionTaller(lat?: number, lng?: number): { ok: boolea
         return {
             ok: false,
             distancia,
-            mensaje: `Estás a ${Math.round(distancia)}m del taller (máximo permitido: ${TALLER_RADIO_METROS}m). Debes estar en el taller para marcar.`,
+            mensaje: `Debes estar en la oficina para marcar, coloca el celular en su lugar.`,
         };
     }
 
     return { ok: true, distancia };
+}
+
+export interface MuestraUbicacion { lat: number; lng: number }
+
+// Evalúa varias lecturas GPS en vez de una sola — el GPS de celular suele
+// "oscilar" unos segundos después del primer fix. Basta con que UNA de las
+// muestras caiga dentro del radio para aceptar la marca; alguien que
+// realmente está en el taller casi siempre va a tener al menos una lectura
+// precisa entre 3 intentos, mientras que alguien fuera del taller no va a
+// "saltar" por casualidad hasta caer dentro del radio.
+export function validarUbicacionTallerMultiple(muestras?: MuestraUbicacion[]): { ok: boolean; distancia?: number; mensaje?: string } {
+    if (!TALLER_LAT || !TALLER_LNG) return { ok: true };
+
+    if (!muestras || muestras.length === 0) {
+        return {
+            ok: false,
+            mensaje: 'No se pudo obtener tu ubicación. Activa el GPS y da permiso de ubicación a la app para poder marcar.',
+        };
+    }
+
+    let mejorDistancia = Infinity;
+    for (const m of muestras) {
+        if (m.lat === undefined || m.lng === undefined || isNaN(m.lat) || isNaN(m.lng)) continue;
+        const d = distanciaMetros(TALLER_LAT, TALLER_LNG, m.lat, m.lng);
+        if (d < mejorDistancia) mejorDistancia = d;
+        if (d <= TALLER_RADIO_METROS) {
+            return { ok: true, distancia: d };
+        }
+    }
+
+    return {
+        ok: false,
+        distancia: mejorDistancia,
+        mensaje: `Debes estar en la oficina para marcar, coloca el celular en su lugar.`,
+    };
 }

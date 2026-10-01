@@ -159,7 +159,8 @@ function ClockWidget() {
     // Ubicación GPS — requerida para marcar entrada/salida/descansos, solo
     // dentro del taller. Se pide justo antes de cada acción (no se guarda
     // en memoria) para que sea siempre la posición actual del dispositivo.
-    const obtenerUbicacion = (): Promise<{ lat: number; lng: number }> => {
+
+    const obtenerUnaLectura = (): Promise<{ lat: number; lng: number }> => {
         return new Promise((resolve, reject) => {
             if (!('geolocation' in navigator)) {
                 reject(new Error('Este dispositivo/navegador no soporta ubicación GPS.'));
@@ -173,16 +174,34 @@ function ClockWidget() {
                         : 'No se pudo obtener tu ubicación. Verifica que el GPS esté activado.';
                     reject(new Error(msg));
                 },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
             );
         });
     };
 
-    const handleActionConUbicacion = async (action: (coords: { lat: number; lng: number }) => Promise<any>) => {
+    // Toma varias lecturas GPS seguidas (el GPS de celular suele oscilar
+    // unos segundos) en vez de una sola. El usuario solo ve el spinner de
+    // "cargando" normal — no nota que se están tomando varias muestras.
+    const obtenerMuestrasUbicacion = async (cantidad = 3): Promise<{ lat: number; lng: number }[]> => {
+        const muestras: { lat: number; lng: number }[] = [];
+        let ultimoError: any = null;
+        for (let i = 0; i < cantidad; i++) {
+            try {
+                muestras.push(await obtenerUnaLectura());
+            } catch (err) {
+                ultimoError = err;
+            }
+            if (i < cantidad - 1) await new Promise((r) => setTimeout(r, 1200));
+        }
+        if (muestras.length === 0) throw ultimoError || new Error('No se pudo obtener tu ubicación.');
+        return muestras;
+    };
+
+    const handleActionConUbicacion = async (action: (muestras: { lat: number; lng: number }[]) => Promise<any>) => {
         setWorking(true);
         try {
-            const coords = await obtenerUbicacion();
-            const res = await action(coords);
+            const muestras = await obtenerMuestrasUbicacion();
+            const res = await action(muestras);
             toast.success(res.message);
             load();
         } catch (err: any) {
@@ -192,14 +211,15 @@ function ClockWidget() {
         }
     };
 
-    const handleClockIn = () => handleActionConUbicacion((coords) => timesheetApi.clockIn(coords));
-    const doClockOut = () => handleActionConUbicacion((coords) => timesheetApi.clockOut(entry.id, undefined, coords));
+    const handleClockIn = () => handleActionConUbicacion((muestras) => timesheetApi.clockIn(muestras));
+    const doClockOut = () => handleActionConUbicacion((muestras) => timesheetApi.clockOut(entry.id, undefined, muestras));
     const handleClockOut = () => setConfirmingClockOut(true);
-    const handleStartBreak = (tipo: BreakType) => handleActionConUbicacion((coords) => timesheetApi.startBreak(entry.id, tipo, coords));
+    const handleStartBreak = (tipo: BreakType) => handleActionConUbicacion((muestras) => timesheetApi.startBreak(entry.id, tipo, muestras));
     const handleEndBreak = (tipo: BreakType) => {
         stopAlarm();
-        return handleActionConUbicacion((coords) => timesheetApi.endBreak(entry.id, tipo, coords));
+        return handleActionConUbicacion((muestras) => timesheetApi.endBreak(entry.id, tipo, muestras));
     };
+
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
 
