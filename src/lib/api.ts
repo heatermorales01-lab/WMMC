@@ -336,3 +336,13 @@ export const timesheetApi = {
     URL.revokeObjectURL(url);
   },
 };
+
+export const contractApi = {
+    prefill: (projectId: string) =>
+        api.get(`/projects/${projectId}/contract/pdf`).then((r) => r.data.data),
+    generate: (projectId: string, formData: FormData) =>
+        api.post(`/projects/${projectId}/contract/pdf`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            responseType: 'blob',
+        }).then((r) => r.data),
+};

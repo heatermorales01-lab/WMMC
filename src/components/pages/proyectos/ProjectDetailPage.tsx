@@ -15,6 +15,8 @@ import { PageLoader, ProjectBadge, QuotationBadge, Spinner, Confirm } from '@/co
 import { useAuthStore } from '@/store/auth.store';
 import ProjectFiles from '@/components/ProjectFiles';
 import PaymentSchedulePanel from '@/components/PaymentSchedulePanel';
+import GenerateContractModal from '@/components/GenerateContractModal';
+
 
 type Tab = 'cotizaciones' | 'produccion' | 'pagos' | 'archivos';
 
@@ -38,6 +40,8 @@ const STAGE_COLOR: Record<StageStatus, string> = {
   COMPLETADO: 'text-green-500',
 };
 
+
+
 export default function ProjectDetailPage({ id }: { id: string }) {
   const router = useRouter();
     const [project, setProject] = useState<Project | null>(null);
@@ -52,7 +56,10 @@ export default function ProjectDetailPage({ id }: { id: string }) {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const { isAdmin, isTrabajador } = useAuthStore();
+    const { isAdmin, isTrabajador } = useAuthStore();
+
+    const [showContract, setShowContract] = useState(false);
+
 
   const load = async () => {
       try {
@@ -252,7 +259,14 @@ export default function ProjectDetailPage({ id }: { id: string }) {
                                       className="text-red-500 hover:text-red-600"
                                   >
                                       <X size={15} />
-                                  </button>
+                                      </button>
+
+                                      <button className="btn-secondary" onClick={() => setShowContract(true)}>
+                                          📄 Generar contrato
+                                      </button>
+                                      {showContract && (
+                                          <GenerateContractModal projectId={project.id} onClose={() => setShowContract(false)} />
+                                      )}
                               </>
                           )}
 
