@@ -260,29 +260,30 @@ export default function ProjectDetailPage({ id }: { id: string }) {
                                   >
                                       <X size={15} />
                                       </button>
-
-                                      <button className="btn-secondary" onClick={() => setShowContract(true)}>
-                                          📄 Generar contrato
-                                      </button>
-                                      {showContract && (
-                                          <GenerateContractModal projectId={project.id} onClose={() => setShowContract(false)} />
-                                      )}
                               </>
                           )}
 
                       </div>
           </div>
         </div>
-        {isAdmin && (
-          <button
-            className="btn-ghost text-danger hover:bg-red-50 mt-1"
-            onClick={() => setConfirmDelete(true)}
-            title="Eliminar proyecto"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
+              <div className="flex items-center gap-2 mt-1">
+                  <button
+                      className="btn-secondary btn-sm"
+                      onClick={() => setShowContract(true)}
+                  >
+                      📄 Generar contrato
+                  </button>
+                  {isAdmin && (
+                      <button
+                          className="btn-ghost text-danger hover:bg-red-50"
+                          onClick={() => setConfirmDelete(true)}
+                          title="Eliminar proyecto"
+                      >
+                          <Trash2 size={14} />
+                      </button>
+                  )}
+              </div>
+          </div>
 
       {/* Banner venta */}
       {project.sale && !isTrabajador && (
@@ -412,7 +413,11 @@ export default function ProjectDetailPage({ id }: { id: string }) {
           onCancel={() => setConfirmDelete(false)}
           loading={deleting}
         />
-      )}
+          )}
+
+          {showContract && (
+              <GenerateContractModal projectId={project.id} onClose={() => setShowContract(false)} />
+          )}
     </div>
   );
 }
