@@ -286,16 +286,18 @@ export const pushApi = {
 };
 
 export const timesheetApi = {
-  // Empleado/Trabajador
-  today: () => api.get('/timesheet/today').then((r) => r.data),
-  clockIn: () => api.post('/timesheet/entry').then((r) => r.data),
-  clockOut: (id: string, observaciones?: string) =>
-    api.patch(`/timesheet/entry/${id}/clock-out`, { observaciones }).then((r) => r.data),
-  startBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe') =>
-    api.patch(`/timesheet/entry/${id}/break/${tipo}/start`).then((r) => r.data),
-  endBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe') =>
-    api.patch(`/timesheet/entry/${id}/break/${tipo}/end`).then((r) => r.data),
-  myHistory: (desde?: string, hasta?: string) =>
+    // Empleado/Trabajador
+    today: () => api.get('/timesheet/today').then((r) => r.data),
+    clockIn: (muestras?: { lat: number; lng: number }[]) =>
+        api.post('/timesheet/entry', { muestras }).then((r) => r.data),
+    clockOut: (id: string, observaciones?: string, muestras?: { lat: number; lng: number }[]) =>
+        api.patch(`/timesheet/entry/${id}/clock-out`, { observaciones, muestras }).then((r) => r.data),
+    startBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe', muestras?: { lat: number; lng: number }[]) =>
+        api.patch(`/timesheet/entry/${id}/break/${tipo}/start`, { muestras }).then((r) => r.data),
+    endBreak: (id: string, tipo: 'desayuno' | 'almuerzo' | 'cafe', muestras?: { lat: number; lng: number }[]) =>
+        api.patch(`/timesheet/entry/${id}/break/${tipo}/end`, { muestras }).then((r) => r.data),
+
+    myHistory: (desde?: string, hasta?: string) =>
     api.get('/timesheet/my', { params: { desde, hasta } }).then((r) => r.data.data),
   breakPolicy: () => api.get('/timesheet/break-policy').then((r) => r.data.data),
   setBreakPolicy: (data: Record<string, number>) =>
@@ -333,4 +335,14 @@ export const timesheetApi = {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
   },
+};
+
+export const contractApi = {
+    prefill: (projectId: string) =>
+        api.get(`/projects/${projectId}/contract/pdf`).then((r) => r.data.data),
+    generate: (projectId: string, formData: FormData) =>
+        api.post(`/projects/${projectId}/contract/pdf`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            responseType: 'blob',
+        }).then((r) => r.data),
 };
