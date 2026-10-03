@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { withBlockTrabajador } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
 import { generateContractPDF, ContractData, ContractImage } from '@/lib/services/contract-pdf.service';
+import { buildCotizacionDesglose } from '@/lib/services/contract-pdf.service';
 
 // GET — valores SUGERIDOS para precargar el formulario. Son solo un punto
 // de partida editable; nada de lo que el usuario cambie en el formulario
@@ -11,7 +12,10 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
     try {
         const project = await prisma.project.findUnique({
             where: { id: params.id },
-            include: { client: true },
+            include: {
+                client: true,
+            },
+
         });
         if (!project) throw new AppError('Proyecto no encontrado', 404);
 
@@ -26,35 +30,44 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
                     include: {
                         furnitureType: true,
                         material: true,
+                        countertopType: true,
                         quotationItemExtras: { include: { extra: true } },
                     },
+                },
+                quotationServices: {
+                    include: { service: true },
                 },
             },
         });
 
+        // Cada cotización trae su desglose COMPLETO ya armado (dimensiones,
+        // accesorios por mueble, servicios/transporte, todo redondeado a
+        // colones enteros) — el modal lo usa directo cuando el usuario cambia
+        // de cotización en el selector, sin volver a pedirle nada al backend.
         const quotationsForForm = quotations.map((q) => ({
             id: q.id,
             version: q.version,
             estado: q.estado,
-            total: Number(q.total),
-            items: q.quotationItems.map((item: any) => ({
-                nombre: item.nombrePersonalizado || item.furnitureType?.nombre || 'Mueble',
-                material: item.material?.nombre || '',
-                cantidad: item.cantidad,
-                precioUnitario: Number(item.precioUnitario),
-                subtotal: Number(item.subtotal),
-            })),
+            total: Math.round(Number(q.total)),
+            desglose: buildCotizacionDesglose(q),
         }));
 
         const quotation = quotations.find((q) => q.estado === 'APROBADA') || quotations[0];
+        const desgloseDefault = quotation ? buildCotizacionDesglose(quotation) : null;
 
         const schedule = await (prisma as any).paymentSchedule.findMany({ where: { projectId: params.id } }).catch(() => []);
 
-        const total = quotation ? Number(quotation.total) : 0;
-        const accesorios = (quotation?.quotationItems || []).flatMap((item: any) =>
-            (item.quotationItemExtras || []).map((ex: any) => ({ nombre: ex.extra.nombre, monto: Number(ex.subtotal) }))
-        );
-        const totalAccesorios = accesorios.reduce((acc: number, a: any) => acc + a.monto, 0);
+        // totalRedondeado nace del desglose (ya es un entero), nunca de un
+        // Decimal de Prisma sin redondear — así nunca llega un valor con
+        // decimales a valorTotal / MoneyInput en el formulario.
+        const totalRedondeado = desgloseDefault?.total ?? 0;
+
+        const accesorios = desgloseDefault
+            ? desgloseDefault.items.flatMap((item) =>
+                item.accesorios.map((ac) => ({ nombre: ac.nombre, monto: ac.subtotal }))
+            )
+            : [];
+        const totalAccesorios = accesorios.reduce((acc, a) => acc + a.monto, 0);
 
         return NextResponse.json({
             ok: true,
@@ -66,12 +79,13 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
                 fechaEntregaEstimada: project.fechaInstalacionTentativa
                     ? new Date(project.fechaInstalacionTentativa).toLocaleDateString('es-CR')
                     : '',
-                valorTotal: total,
-                anticipo60: Math.round(total * 0.6),
-                pagoInstalacion30: Math.round(total * 0.3),
-                pagoFinal10: Math.round(total * 0.1),
+                valorTotal: totalRedondeado,
+                anticipo60: Math.round(totalRedondeado * 0.6),
+                pagoInstalacion30: Math.round(totalRedondeado * 0.3),
+                pagoFinal10: Math.round(totalRedondeado * 0.1),
                 accesorios,
                 totalAccesorios,
+                cotizacionDesglose: desgloseDefault,
                 schedule, // referencia informativa por si ya tienes un cronograma propio cargado
                 quotations: quotationsForForm,
                 quotationIdPorDefecto: quotation?.id || null,

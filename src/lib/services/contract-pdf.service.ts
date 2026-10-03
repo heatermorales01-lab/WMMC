@@ -39,6 +39,7 @@ const C = {
     slate200: '#e2e8f0',
     slate50: '#f8fafc',
     primary: '#c9861f', // ajustar al color de marca real si es distinto
+    primaryDark: '#8a610a',
 };
 
 export interface ContractImage {
@@ -49,6 +50,231 @@ export interface ContractImage {
 // Todo lo que entra aquí es texto que el usuario escribió en el formulario
 // al momento de generar el contrato — nada de esto viene de, ni se guarda
 // en, Client/Project/Quotation. Es "rellenar y usar una sola vez".
+
+export interface CotizacionDesgloseItem {
+    nombre: string;
+    material: string;
+    sobre?: string;
+    dimensiones: string;
+    descripcion?: string;
+    cantidad: number;
+    precioUnitario: number;
+    subtotalMueble: number;
+    subtotalConAccesorios: number;
+    accesorios: { nombre: string; cantidad: number; subtotal: number }[];
+}
+
+export interface CotizacionDesgloseServicio {
+    nombre: string;
+    cantidad: number;
+    subtotal: number;
+    precioPorUnidad?: number;
+    esTransporte: boolean;
+}
+
+export interface CotizacionDesglose {
+    version: number;
+    items: CotizacionDesgloseItem[];
+    servicios: CotizacionDesgloseServicio[];
+    subtotalMuebles: number;
+    totalServicios: number;
+    descuento?: number;
+    descuentoMotivo?: string;
+    incluirIva?: boolean;
+    ivaMonto?: number;
+    total: number;
+}
+
+// ── Construye el desglose (para el contrato) a partir de una cotización de Prisma ──
+// Recibe la cotización con: quotationItems -> furnitureType, material, countertopType,
+// quotationItemExtras -> extra; y quotationServices -> service.
+// Redondea TODOS los montos a colones enteros aquí mismo, una sola vez, para que
+// nunca llegue un valor con decimales a valorTotal / MoneyInput más adelante.
+export function buildCotizacionDesglose(quotation: any): CotizacionDesglose {
+    function getFondo(tipo: string): string | null {
+        const t = (tipo || '').toUpperCase();
+        if (t.includes('CLOSET') || t.includes('BANIO') || t === 'BASE' || t === 'MUEBLE_TV') return '50 cm';
+        if (t === 'TORRE' || t === 'ALACENA_REFRI') return '65 cm';
+        return null;
+    }
+
+    const items: CotizacionDesgloseItem[] = (quotation.quotationItems || []).map((item: any) => {
+        const dims = [`L:${item.largo}`, item.alto ? `A:${item.alto}` : null, item.ancho ? `An:${item.ancho}` : null]
+            .filter(Boolean).join(' · ') + ' cm';
+        const fondo = item.fondoPersonalizado || getFondo(item.furnitureType?.nombre);
+        const dimensiones = fondo ? `${dims} · Fondo: ${fondo}` : dims;
+        const nombre = item.nombrePersonalizado || item.furnitureType?.nombre || '';
+
+        const subtotalConAccesorios = Math.round(Number(item.subtotal));
+        const subtotalExtras = (item.quotationItemExtras || [])
+            .reduce((acc: number, ex: any) => acc + Math.round(Number(ex.subtotal)), 0);
+        const subtotalMueble = subtotalConAccesorios - subtotalExtras;
+
+        return {
+            nombre,
+            material: item.material?.nombre || '',
+            sobre: item.countertopType?.nombre,
+            dimensiones,
+            descripcion: item.descripcion || undefined,
+            cantidad: item.cantidad,
+            precioUnitario: Math.round(Number(item.precioUnitario)),
+            subtotalMueble,
+            subtotalConAccesorios,
+            accesorios: (item.quotationItemExtras || []).map((ex: any) => ({
+                nombre: ex.extra?.nombre || '',
+                cantidad: ex.cantidad,
+                subtotal: Math.round(Number(ex.subtotal)),
+            })),
+        };
+    });
+
+    const servicios: CotizacionDesgloseServicio[] = (quotation.quotationServices || []).map((qs: any) => {
+        const esTransporte = (qs.service?.nombre || '').toLowerCase().includes('transporte');
+        const subtotal = Math.round(Number(qs.subtotal));
+        const precioPorUnidad = qs.cantidad > 0 ? Math.round(subtotal / Number(qs.cantidad)) : undefined;
+        return { nombre: qs.service?.nombre || '', cantidad: qs.cantidad, subtotal, precioPorUnidad, esTransporte };
+    });
+
+    const subtotalMuebles = Math.round(Number(quotation.subtotal));
+    const totalServicios = servicios.reduce((acc, s) => acc + s.subtotal, 0);
+    const total = Math.round(Number(quotation.total)); // ← aquí se corta de raíz el bug del decimal
+
+    return {
+        version: quotation.version,
+        items,
+        servicios,
+        subtotalMuebles,
+        totalServicios,
+        descuento: quotation.descuento ? Math.round(Number(quotation.descuento)) : undefined,
+        descuentoMotivo: quotation.descuentoMotivo || undefined,
+        incluirIva: !!quotation.incluirIva,
+        ivaMonto: quotation.ivaMonto ? Math.round(Number(quotation.ivaMonto)) : undefined,
+        total,
+    };
+}
+
+// ── Tabla de "Descripción general del proyecto" — calco visual de la cotización real ──
+function tablaDescripcionGeneral(desglose: CotizacionDesglose): any[] {
+    const itemRows: any[][] = [];
+
+    desglose.items.forEach((item, idx) => {
+        itemRows.push([
+            { text: String(idx + 1), alignment: 'center', fontSize: 8, color: C.slate500 },
+            {
+                stack: [
+                    { text: `${item.nombre} — ${item.material}${item.sobre ? ' + ' + item.sobre : ''}`, bold: true, fontSize: 9 },
+                    { text: item.dimensiones, fontSize: 8, color: C.slate500, marginTop: 1 },
+                    ...(item.descripcion ? [{ text: item.descripcion, fontSize: 8, italics: true, color: C.slate700, marginTop: 1 }] : []),
+                ],
+            },
+            { text: String(item.cantidad), alignment: 'center', fontSize: 9 },
+            { text: crc(item.precioUnitario), alignment: 'right', fontSize: 9 },
+            { text: crc(item.subtotalMueble), alignment: 'right', fontSize: 9, bold: true },
+        ]);
+
+        item.accesorios.forEach((ac) => {
+            itemRows.push([
+                { text: '', border: [false, false, false, false], fillColor: C.slate50 },
+                { text: `  ↳ ${ac.nombre} × ${ac.cantidad}`, fontSize: 8, color: C.slate500, italics: true, border: [false, false, false, false], fillColor: C.slate50 },
+                { text: '', border: [false, false, false, false], fillColor: C.slate50 },
+                { text: '', border: [false, false, false, false], fillColor: C.slate50 },
+                { text: crc(ac.subtotal), alignment: 'right', fontSize: 8, color: C.slate500, border: [false, false, false, false], fillColor: C.slate50 },
+            ]);
+        });
+
+        if (item.accesorios.length > 0) {
+            itemRows.push([
+                { text: '', border: [false, false, false, false], fillColor: C.slate50 },
+                {
+                    text: 'Subtotal del mueble (incluye accesorios)', colSpan: 3, alignment: 'right',
+                    fontSize: 8, bold: true, italics: true, color: C.slate700,
+                    border: [false, false, false, true], borderColor: [C.slate200, C.slate200, C.slate200, C.slate200],
+                    fillColor: C.slate50,
+                },
+                {}, {},
+                {
+                    text: crc(item.subtotalConAccesorios), alignment: 'right', fontSize: 9, bold: true, color: C.slate900,
+                    border: [false, false, false, true], borderColor: [C.slate200, C.slate200, C.slate200, C.slate200],
+                    fillColor: C.slate50,
+                },
+            ]);
+        }
+    });
+
+    const svcRows: any[][] = desglose.servicios.length > 0 ? [
+        [{ text: 'SERVICIOS', fontSize: 8, bold: true, color: C.slate700, colSpan: 5, fillColor: C.slate50 }, {}, {}, {}, {}],
+        ...desglose.servicios.map((s) => [
+            { text: '', border: [false, false, false, false] },
+            { text: s.esTransporte ? `${s.nombre} — ${s.cantidad} km` : `${s.nombre} × ${s.cantidad}`, fontSize: 9 },
+            { text: '', alignment: 'center' },
+            { text: s.esTransporte && s.precioPorUnidad ? crc(s.precioPorUnidad) + '/km' : '', alignment: 'right', fontSize: 8, color: C.slate500 },
+            { text: crc(s.subtotal), alignment: 'right', fontSize: 9, bold: true },
+        ]),
+    ] : [];
+
+    return [
+        {
+            table: {
+                headerRows: 1,
+                widths: [18, '*', 35, 75, 75],
+                body: [
+                    [
+                        { text: '#', bold: true, color: C.slate900, alignment: 'center', fontSize: 8 },
+                        { text: 'Descripción', bold: true, color: C.slate900, fontSize: 8 },
+                        { text: 'Cant.', bold: true, color: C.slate900, alignment: 'center', fontSize: 8 },
+                        { text: 'P. Unit.', bold: true, color: C.slate900, alignment: 'right', fontSize: 8 },
+                        { text: 'Subtotal', bold: true, color: C.slate900, alignment: 'right', fontSize: 8 },
+                    ],
+                    ...itemRows,
+                    ...svcRows,
+                ],
+            },
+            layout: {
+                hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 1 : 0.5,
+                vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths!.length) ? 1 : 0.5,
+                hLineColor: () => C.slate200,
+                vLineColor: () => C.slate200,
+                fillColor: (row: number) => row === 0 ? C.primary : null,
+                paddingTop: () => 6, paddingBottom: () => 6,
+                paddingLeft: () => 7, paddingRight: () => 7,
+            },
+            margin: [0, 0, 0, 10] as [number, number, number, number],
+        },
+        {
+            columns: [
+                { width: '*', text: '' },
+                {
+                    width: 200,
+                    table: {
+                        widths: ['*', 'auto'],
+                        body: [
+                            [{ text: 'Subtotal muebles:', fontSize: 9, color: C.slate700 }, { text: crc(desglose.subtotalMuebles), fontSize: 9, bold: true, alignment: 'right' }],
+                            ...(desglose.totalServicios > 0 ? [[
+                                { text: 'Transporte y servicios:', fontSize: 9, color: C.slate700 },
+                                { text: crc(desglose.totalServicios), fontSize: 9, bold: true, alignment: 'right' },
+                            ]] : []),
+                            ...(desglose.descuento && desglose.descuento > 0 ? [[
+                                { text: desglose.descuentoMotivo ? `Descuento (${desglose.descuentoMotivo}):` : 'Descuento:', fontSize: 9, color: C.slate700 },
+                                { text: `- ${crc(desglose.descuento)}`, fontSize: 9, bold: true, alignment: 'right', color: C.primaryDark },
+                            ]] : []),
+                            ...(desglose.incluirIva ? [[
+                                { text: 'IVA (13%):', fontSize: 9, color: C.slate700 },
+                                { text: crc(desglose.ivaMonto || 0), fontSize: 9, bold: true, alignment: 'right' },
+                            ]] : []),
+                            [
+                                { text: 'TOTAL:', fontSize: 11, bold: true, color: C.slate900, fillColor: C.primary },
+                                { text: crc(desglose.total), fontSize: 11, bold: true, color: C.slate900, alignment: 'right', fillColor: C.primary },
+                            ],
+                        ],
+                    },
+                    layout: { hLineWidth: (i: number, n: any) => (i === 0 || i === n.table.body.length) ? 1 : 0.5, vLineWidth: () => 0, hLineColor: () => C.slate200, paddingTop: () => 5, paddingBottom: () => 5, paddingLeft: () => 7, paddingRight: () => 7 },
+                },
+            ],
+            margin: [0, 0, 0, 10] as [number, number, number, number],
+        },
+    ];
+}
+
 export interface ContractData {
     consumidorNombre: string;
     consumidorCedula: string;
@@ -78,11 +304,7 @@ export interface ContractData {
     // - 'manual': se usa imagenDescripcionGeneral (como antes).
     // - 'cotizacion': se usa el desglose de la cotización seleccionada.
     descripcionGeneralModo: 'manual' | 'cotizacion';
-    cotizacionDesglose?: {
-        version: number;
-        items: { nombre: string; material: string; cantidad: number; precioUnitario: number; subtotal: number }[];
-        total: number;
-    };
+    cotizacionDesglose?: CotizacionDesglose;
 
     // Imágenes — se insertan directo en el PDF, nunca se persisten
     imagenDescripcionGeneral?: ContractImage;
@@ -167,30 +389,7 @@ export async function generateContractPDF(data: ContractData): Promise<Buffer> {
             ...(data.descripcionGeneralModo === 'cotizacion' && data.cotizacionDesglose
                 ? [
                     { text: `Según cotización v${data.cotizacionDesglose.version}, aprobada por el Consumidor:`, fontSize: 8.5, italics: true, color: C.slate500, margin: [0, 0, 0, 4] as [number, number, number, number] },
-                    {
-                        table: {
-                            widths: ['*', 'auto', 'auto', 'auto', 'auto'],
-                            body: [
-                                [
-                                    { text: 'Mueble', bold: true, fontSize: 8 },
-                                    { text: 'Material', bold: true, fontSize: 8 },
-                                    { text: 'Cant.', bold: true, fontSize: 8, alignment: 'center' as const },
-                                    { text: 'P. Unit.', bold: true, fontSize: 8, alignment: 'right' as const },
-                                    { text: 'Subtotal', bold: true, fontSize: 8, alignment: 'right' as const },
-                                ],
-                                ...data.cotizacionDesglose.items.map((it) => [
-                                    { text: it.nombre, fontSize: 8 },
-                                    { text: it.material, fontSize: 8 },
-                                    { text: String(it.cantidad), fontSize: 8, alignment: 'center' as const },
-                                    { text: crc(it.precioUnitario), fontSize: 8, alignment: 'right' as const },
-                                    { text: crc(it.subtotal), fontSize: 8, alignment: 'right' as const },
-                                ]),
-                            ],
-                        },
-                        layout: { fillColor: (i: number) => (i === 0 ? C.slate50 : null) },
-                        margin: [0, 0, 0, 4] as [number, number, number, number],
-                    },
-                    { text: [`Total de la cotización: `, { text: crc(data.cotizacionDesglose.total), bold: true }], fontSize: 9, alignment: 'right' as const, margin: [0, 0, 0, 10] as [number, number, number, number] },
+                    ...tablaDescripcionGeneral(data.cotizacionDesglose),
                 ]
                 : [
                     data.imagenDescripcionGeneral

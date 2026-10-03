@@ -10,8 +10,39 @@ interface Props {
 }
 
 interface Accesorio { nombre: string; monto: number; imagen?: File | null }
-interface QuotationItem { nombre: string; material: string; cantidad: number; precioUnitario: number; subtotal: number }
-interface QuotationOption { id: string; version: number; estado: string; total: number; items: QuotationItem[] }
+
+interface CotizacionDesgloseItem {
+    nombre: string;
+    material: string;
+    sobre?: string;
+    dimensiones: string;
+    descripcion?: string;
+    cantidad: number;
+    precioUnitario: number;
+    subtotalMueble: number;
+    subtotalConAccesorios: number;
+    accesorios: { nombre: string; cantidad: number; subtotal: number }[];
+}
+interface CotizacionDesgloseServicio {
+    nombre: string;
+    cantidad: number;
+    subtotal: number;
+    precioPorUnidad?: number;
+    esTransporte: boolean;
+}
+interface CotizacionDesglose {
+    version: number;
+    items: CotizacionDesgloseItem[];
+    servicios: CotizacionDesgloseServicio[];
+    subtotalMuebles: number;
+    totalServicios: number;
+    descuento?: number;
+    descuentoMotivo?: string;
+    incluirIva?: boolean;
+    ivaMonto?: number;
+    total: number;
+}
+interface QuotationOption { id: string; version: number; estado: string; total: number; desglose: CotizacionDesglose }
 
 const DRAFT_KEY = (projectId: string) => `contrato-borrador-${projectId}`;
 
@@ -71,10 +102,10 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
                     consumidorDomicilio: d.consumidorDomicilio || '',
                     domicilioEntrega: d.domicilioEntrega || '',
                     fechaEntregaEstimada: d.fechaEntregaEstimada || '',
-                    valorTotal: String(d.valorTotal ?? ''),
-                    anticipo60: String(d.anticipo60 ?? ''),
-                    pagoInstalacion30: String(d.pagoInstalacion30 ?? ''),
-                    pagoFinal10: String(d.pagoFinal10 ?? ''),
+                    valorTotal: String(Math.round(Number(d.valorTotal ?? 0))),
+                    anticipo60: String(Math.round(Number(d.anticipo60 ?? 0))),
+                    pagoInstalacion30: String(Math.round(Number(d.pagoInstalacion30 ?? 0))),
+                    pagoFinal10: String(Math.round(Number(d.pagoFinal10 ?? 0))),
                 }));
                 setAccesorios((d.accesorios || []).map((a: any) => ({ ...a, imagen: null })));
                 setQuotations(d.quotations || []);
@@ -110,10 +141,10 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
                         consumidorDomicilio: d.consumidorDomicilio || '',
                         domicilioEntrega: d.domicilioEntrega || '',
                         fechaEntregaEstimada: d.fechaEntregaEstimada || '',
-                        valorTotal: String(d.valorTotal ?? ''),
-                        anticipo60: String(d.anticipo60 ?? ''),
-                        pagoInstalacion30: String(d.pagoInstalacion30 ?? ''),
-                        pagoFinal10: String(d.pagoFinal10 ?? ''),
+                        valorTotal: String(Math.round(Number(d.valorTotal ?? 0))),
+                        anticipo60: String(Math.round(Number(d.anticipo60 ?? 0))),
+                        pagoInstalacion30: String(Math.round(Number(d.pagoInstalacion30 ?? 0))),
+                        pagoFinal10: String(Math.round(Number(d.pagoFinal10 ?? 0))),
                     }));
                     setAccesorios((d.accesorios || []).map((a: any) => ({ ...a, imagen: null })));
                     setQuotationIdSeleccionada(d.quotationIdPorDefecto || (d.quotations?.[0]?.id ?? ''));
@@ -140,6 +171,24 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
     };
 
     const set = (field: keyof typeof form, value: string) => setForm((p) => ({ ...p, [field]: value }));
+
+    // Al cambiar la cotización elegida para la descripción automática,
+    // sincroniza también el valor total y los 3 pagos con esa cotización.
+    // Siempre se redondea a colones enteros antes de tocar un MoneyInput.
+    const handleSeleccionarCotizacion = (quotationId: string) => {
+        setQuotationIdSeleccionada(quotationId);
+        const q = quotations.find((x) => x.id === quotationId);
+        if (!q) return;
+
+        const totalEntero = Math.round(Number(q.desglose?.total ?? q.total ?? 0));
+        setForm((p) => ({
+            ...p,
+            valorTotal: String(totalEntero),
+            anticipo60: String(Math.round(totalEntero * 0.6)),
+            pagoInstalacion30: String(Math.round(totalEntero * 0.3)),
+            pagoFinal10: String(Math.round(totalEntero * 0.1)),
+        }));
+    };
 
     const updateAccesorio = (i: number, field: 'nombre' | 'monto', value: string | number) => {
         setAccesorios((prev) => prev.map((a, idx) => idx === i ? { ...a, [field]: field === 'monto' ? Number(value) || 0 : value } : a));
@@ -168,11 +217,9 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
 
             fd.append('descripcionGeneralModo', descripcionGeneralModo);
             if (descripcionGeneralModo === 'cotizacion' && quotationSeleccionada) {
-                fd.append('cotizacionDesglose', JSON.stringify({
-                    version: quotationSeleccionada.version,
-                    items: quotationSeleccionada.items,
-                    total: quotationSeleccionada.total,
-                }));
+                // El desglose ya viene completo (dimensiones, accesorios por mueble,
+                // servicios/transporte, todo redondeado) desde el prefill — se manda tal cual.
+                fd.append('cotizacionDesglose', JSON.stringify(quotationSeleccionada.desglose));
             } else if (imagenDescripcionGeneral) {
                 fd.append('imagenDescripcionGeneral', imagenDescripcionGeneral);
             }
@@ -261,18 +308,35 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
                         ) : (
                             <>
                                 <FormGroup label="Cotización a usar">
-                                    <select className="input" value={quotationIdSeleccionada} onChange={(e) => setQuotationIdSeleccionada(e.target.value)}>
+                                    <select className="input" value={quotationIdSeleccionada} onChange={(e) => handleSeleccionarCotizacion(e.target.value)}>
                                         {quotations.map((q) => (
                                             <option key={q.id} value={q.id}>v{q.version} — {q.estado} — ₡{q.total.toLocaleString('es-CR')}</option>
                                         ))}
                                     </select>
                                 </FormGroup>
                                 {quotationSeleccionada && (
-                                    <div className="mt-2 border rounded-lg p-2 text-xs bg-slate-50 max-h-32 overflow-y-auto">
-                                        {quotationSeleccionada.items.map((it, i) => (
-                                            <div key={i} className="flex justify-between py-0.5">
-                                                <span>{it.nombre} — {it.material} × {it.cantidad}</span>
-                                                <span className="font-semibold">₡{it.subtotal.toLocaleString('es-CR')}</span>
+                                    <div className="mt-2 border rounded-lg p-2 text-xs bg-slate-50 max-h-40 overflow-y-auto space-y-1">
+                                        {quotationSeleccionada.desglose.items.map((it, i) => (
+                                            <div key={i}>
+                                                <div className="flex justify-between py-0.5">
+                                                    <span>
+                                                        {it.nombre} — {it.material}{it.sobre ? ` + ${it.sobre}` : ''} × {it.cantidad}
+                                                        <span className="text-slate-400"> · {it.dimensiones}</span>
+                                                    </span>
+                                                    <span className="font-semibold">₡{it.subtotalConAccesorios.toLocaleString('es-CR')}</span>
+                                                </div>
+                                                {it.accesorios.map((ac, j) => (
+                                                    <div key={j} className="flex justify-between py-0.5 pl-3 text-slate-500 italic">
+                                                        <span>↳ {ac.nombre} × {ac.cantidad}</span>
+                                                        <span>₡{ac.subtotal.toLocaleString('es-CR')}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
+                                        {quotationSeleccionada.desglose.servicios.map((s, i) => (
+                                            <div key={`svc-${i}`} className="flex justify-between py-0.5 border-t border-slate-200 pt-1 mt-1">
+                                                <span>{s.esTransporte ? `${s.nombre} — ${s.cantidad} km` : `${s.nombre} × ${s.cantidad}`}</span>
+                                                <span className="font-semibold">₡{s.subtotal.toLocaleString('es-CR')}</span>
                                             </div>
                                         ))}
                                     </div>
