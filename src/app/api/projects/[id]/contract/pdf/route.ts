@@ -15,13 +15,38 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
         });
         if (!project) throw new AppError('Proyecto no encontrado', 404);
 
-        const quotation = await prisma.quotation.findFirst({
-            where: { projectId: params.id, estado: 'APROBADA' },
+        // Todas las cotizaciones del proyecto, con su desglose completo — así
+        // el formulario puede dejar elegir cuál usar (para la descripción
+        // general automática) sin tener que ir y volver al servidor.
+        const quotations = await prisma.quotation.findMany({
+            where: { projectId: params.id },
             orderBy: { version: 'desc' },
             include: {
-                quotationItems: { include: { quotationItemExtras: { include: { extra: true } } } },
+                quotationItems: {
+                    include: {
+                        furnitureType: true,
+                        material: true,
+                        quotationItemExtras: { include: { extra: true } },
+                    },
+                },
             },
         });
+
+        const quotationsForForm = quotations.map((q) => ({
+            id: q.id,
+            version: q.version,
+            estado: q.estado,
+            total: Number(q.total),
+            items: q.quotationItems.map((item: any) => ({
+                nombre: item.nombrePersonalizado || item.furnitureType?.nombre || 'Mueble',
+                material: item.material?.nombre || '',
+                cantidad: item.cantidad,
+                precioUnitario: Number(item.precioUnitario),
+                subtotal: Number(item.subtotal),
+            })),
+        }));
+
+        const quotation = quotations.find((q) => q.estado === 'APROBADA') || quotations[0];
 
         const schedule = await (prisma as any).paymentSchedule.findMany({ where: { projectId: params.id } }).catch(() => []);
 
@@ -48,6 +73,8 @@ export const GET = withBlockTrabajador(async (_req, { params }) => {
                 accesorios,
                 totalAccesorios,
                 schedule, // referencia informativa por si ya tienes un cronograma propio cargado
+                quotations: quotationsForForm,
+                quotationIdPorDefecto: quotation?.id || null,
             },
         });
     } catch (e) { return handleError(e); }
@@ -93,6 +120,16 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
             if (img) referenciasVisuales.push({ nombre: accesorios[i].nombre || `Accesorio ${i + 1}`, imagen: img });
         }
 
+        const descripcionGeneralModo = (getStr('descripcionGeneralModo') || 'manual') as 'manual' | 'cotizacion';
+        let cotizacionDesglose: ContractData['cotizacionDesglose'] = undefined;
+        if (descripcionGeneralModo === 'cotizacion') {
+            try {
+                cotizacionDesglose = JSON.parse(getStr('cotizacionDesglose') || 'null') || undefined;
+            } catch {
+                cotizacionDesglose = undefined;
+            }
+        }
+
         const data: ContractData = {
             consumidorNombre: getStr('consumidorNombre'),
             consumidorCedula: getStr('consumidorCedula'),
@@ -111,6 +148,8 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
             fechaEntregaEstimada: getStr('fechaEntregaEstimada'),
             domicilioEntrega: getStr('domicilioEntrega'),
             observacionesGenerales: getStr('observacionesGenerales'),
+            descripcionGeneralModo,
+            cotizacionDesglose,
             imagenDescripcionGeneral: await readImage('imagenDescripcionGeneral'),
             imagenesDescripcionVisual: await readImages('imagenesDescripcionVisual'),
             imagenMuestraColorExterior: await readImage('imagenMuestraColorExterior'),

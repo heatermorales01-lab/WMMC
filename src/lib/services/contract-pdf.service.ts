@@ -73,6 +73,17 @@ export interface ContractData {
 
     observacionesGenerales?: string;
 
+    // Descripción general del proyecto: conviven las dos formas, se elige
+    // una en el formulario cada vez que se genera el contrato.
+    // - 'manual': se usa imagenDescripcionGeneral (como antes).
+    // - 'cotizacion': se usa el desglose de la cotización seleccionada.
+    descripcionGeneralModo: 'manual' | 'cotizacion';
+    cotizacionDesglose?: {
+        version: number;
+        items: { nombre: string; material: string; cantidad: number; precioUnitario: number; subtotal: number }[];
+        total: number;
+    };
+
     // Imágenes — se insertan directo en el PDF, nunca se persisten
     imagenDescripcionGeneral?: ContractImage;
     imagenesDescripcionVisual?: ContractImage[];
@@ -153,9 +164,39 @@ export async function generateContractPDF(data: ContractData): Promise<Buffer> {
             },
 
             { text: 'DESCRIPCIÓN GENERAL DEL PROYECTO', bold: true, fontSize: 10, margin: [0, 4, 0, 4] },
-            data.imagenDescripcionGeneral
-                ? { image: toDataUri(data.imagenDescripcionGeneral.buffer, data.imagenDescripcionGeneral.mimeType), width: 340, margin: [0, 0, 0, 10] }
-                : { text: '(Sin imagen adjunta)', fontSize: 8, italics: true, color: C.slate500, margin: [0, 0, 0, 10] },
+            ...(data.descripcionGeneralModo === 'cotizacion' && data.cotizacionDesglose
+                ? [
+                    { text: `Según cotización v${data.cotizacionDesglose.version}, aprobada por el Consumidor:`, fontSize: 8.5, italics: true, color: C.slate500, margin: [0, 0, 0, 4] as [number, number, number, number] },
+                    {
+                        table: {
+                            widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+                            body: [
+                                [
+                                    { text: 'Mueble', bold: true, fontSize: 8 },
+                                    { text: 'Material', bold: true, fontSize: 8 },
+                                    { text: 'Cant.', bold: true, fontSize: 8, alignment: 'center' as const },
+                                    { text: 'P. Unit.', bold: true, fontSize: 8, alignment: 'right' as const },
+                                    { text: 'Subtotal', bold: true, fontSize: 8, alignment: 'right' as const },
+                                ],
+                                ...data.cotizacionDesglose.items.map((it) => [
+                                    { text: it.nombre, fontSize: 8 },
+                                    { text: it.material, fontSize: 8 },
+                                    { text: String(it.cantidad), fontSize: 8, alignment: 'center' as const },
+                                    { text: crc(it.precioUnitario), fontSize: 8, alignment: 'right' as const },
+                                    { text: crc(it.subtotal), fontSize: 8, alignment: 'right' as const },
+                                ]),
+                            ],
+                        },
+                        layout: { fillColor: (i: number) => (i === 0 ? C.slate50 : null) },
+                        margin: [0, 0, 0, 4] as [number, number, number, number],
+                    },
+                    { text: [`Total de la cotización: `, { text: crc(data.cotizacionDesglose.total), bold: true }], fontSize: 9, alignment: 'right' as const, margin: [0, 0, 0, 10] as [number, number, number, number] },
+                ]
+                : [
+                    data.imagenDescripcionGeneral
+                        ? { image: toDataUri(data.imagenDescripcionGeneral.buffer, data.imagenDescripcionGeneral.mimeType), width: 340, margin: [0, 0, 0, 10] as [number, number, number, number] }
+                        : { text: '(Sin imagen adjunta)', fontSize: 8, italics: true, color: C.slate500, margin: [0, 0, 0, 10] as [number, number, number, number] },
+                ]),
 
             { text: 'DESCRIPCIÓN VISUAL DEL PROYECTO', bold: true, fontSize: 10, margin: [0, 4, 0, 4] },
             imagenesDescripcionVisual.length
