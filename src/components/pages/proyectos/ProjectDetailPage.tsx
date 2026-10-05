@@ -267,12 +267,14 @@ export default function ProjectDetailPage({ id }: { id: string }) {
           </div>
         </div>
               <div className="flex items-center gap-2 mt-1">
-                  <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => setShowContract(true)}
-                  >
-                      📄 Generar contrato
-                  </button>
+                  {!isTrabajador && (
+                      <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => setShowContract(true)}
+                      >
+                          📄 Generar contrato
+                      </button>
+                  )}
                   {isAdmin && (
                       <button
                           className="btn-ghost text-danger hover:bg-red-50"

@@ -4,7 +4,7 @@ import { withAuth } from '@/lib/auth';
 import { handleError, AppError } from '@/lib/errors';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export const DELETE = withAuth(async (_req, { params }) => {
+export const DELETE = withAuth(async (_req, { params }, user) => {
     try {
 
         const file = await (prisma as any).projectFile.findUnique({
@@ -15,6 +15,10 @@ export const DELETE = withAuth(async (_req, { params }) => {
 
         if (!file) {
             throw new AppError("Archivo no encontrado", 404);
+        }
+
+        if (file.tipo === 'CONTRATO' && user.roleName === 'TRABAJADOR') {
+            throw new AppError("Acceso denegado para este rol", 403);
         }
 
         const bucket = process.env.SUPABASE_STORAGE_BUCKET!;
