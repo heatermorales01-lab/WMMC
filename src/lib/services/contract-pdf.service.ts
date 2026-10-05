@@ -47,6 +47,16 @@ export interface ContractImage {
     mimeType: string;
 }
 
+// Un proyecto puede combinar varios colores externos (ej: un color para la
+// cocina, otro para el closet) — por eso es una lista. El interior, en
+// cambio, siempre es un solo color para todo el proyecto.
+export interface ColorExteriorEntry {
+    nombre: string; // a qué mueble/área aplica, ej: "Cocina", "Closet" (opcional)
+    color: string;
+    colorTapeta?: string;
+    imagenMuestra?: ContractImage;
+}
+
 // Todo lo que entra aquí es texto que el usuario escribió en el formulario
 // al momento de generar el contrato — nada de esto viene de, ni se guarda
 // en, Client/Project/Quotation. Es "rellenar y usar una sola vez".
@@ -280,10 +290,11 @@ export interface ContractData {
     consumidorCedula: string;
     consumidorDomicilio: string;
 
-    colorExterior: string;
+    // Uno o más colores externos (cada uno con su propio nombre/área,
+    // tapeta y foto de muestra opcional). El interior siempre es uno solo.
+    coloresExteriores: ColorExteriorEntry[];
     colorInterior: string;
     colorSobre: string;
-    colorTapetaExterior?: string;
     colorTapetaInterior?: string;
 
     valorTotal: number;
@@ -309,7 +320,6 @@ export interface ContractData {
     // Imágenes — se insertan directo en el PDF, nunca se persisten
     imagenDescripcionGeneral?: ContractImage;
     imagenesDescripcionVisual?: ContractImage[];
-    imagenMuestraColorExterior?: ContractImage;
     imagenMuestraColorInterior?: ContractImage;
 
     // Capítulo 13 — depende de lo que el cliente contrató en ESTE proyecto,
@@ -404,7 +414,15 @@ export async function generateContractPDF(data: ContractData): Promise<Buffer> {
 
             {
                 columns: [
-                    { text: [{ text: 'Color externo del mueble: ', bold: true }, data.colorExterior || '_______________'], fontSize: 9 },
+                    {
+                        text: [
+                            { text: 'Color(es) externo(s): ', bold: true },
+                            data.coloresExteriores.length
+                                ? data.coloresExteriores.map((c) => `${c.color}${c.nombre ? ` (${c.nombre})` : ''}`).join(' · ')
+                                : '_______________',
+                        ],
+                        fontSize: 9,
+                    },
                     { text: [{ text: 'Color interno del mueble: ', bold: true }, data.colorInterior || '_______________'], fontSize: 9 },
                     { text: [{ text: 'Sobre: ', bold: true }, data.colorSobre || '_______________'], fontSize: 9 },
                 ],
@@ -463,7 +481,13 @@ export async function generateContractPDF(data: ContractData): Promise<Buffer> {
                     widths: ['*', '*', '*'],
                     body: [
                         [{ text: 'Elemento', bold: true, fontSize: 8.5 }, { text: 'Color de Melamina', bold: true, fontSize: 8.5 }, { text: 'Color de Tapeta', bold: true, fontSize: 8.5 }],
-                        [{ text: 'Melamina exterior', fontSize: 8.5 }, { text: data.colorExterior || '—', fontSize: 8.5 }, { text: data.colorTapetaExterior || data.colorExterior || '—', fontSize: 8.5 }],
+                        ...(data.coloresExteriores.length > 0
+                            ? data.coloresExteriores.map((c) => [
+                                { text: c.nombre ? `Melamina exterior — ${c.nombre}` : 'Melamina exterior', fontSize: 8.5 },
+                                { text: c.color || '—', fontSize: 8.5 },
+                                { text: c.colorTapeta || c.color || '—', fontSize: 8.5 },
+                            ])
+                            : [[{ text: 'Melamina exterior', fontSize: 8.5 }, { text: '—', fontSize: 8.5 }, { text: '—', fontSize: 8.5 }]]),
                         [{ text: 'Melamina interior', fontSize: 8.5 }, { text: data.colorInterior || '—', fontSize: 8.5 }, { text: data.colorTapetaInterior || data.colorInterior || '—', fontSize: 8.5 }],
                     ],
                 },
@@ -472,30 +496,30 @@ export async function generateContractPDF(data: ContractData): Promise<Buffer> {
             },
 
             { text: 'MUESTRA VISUAL DE COLORES APROBADOS', bold: true, fontSize: 9.5, margin: [0, 0, 0, 4] },
-            {
-                columns: [
-                    {
-                        width: '*',
-                        stack: [
-                            { text: 'Melamina exterior', fontSize: 8.5, bold: true, margin: [0, 0, 0, 3] },
-                            data.imagenMuestraColorExterior
-                                ? { image: toDataUri(data.imagenMuestraColorExterior.buffer, data.imagenMuestraColorExterior.mimeType), width: 220 }
-                                : { text: '(Sin muestra adjunta)', fontSize: 8, italics: true, color: C.slate500 },
-                        ],
-                    },
-                    {
-                        width: '*',
-                        stack: [
-                            { text: 'Melamina interior', fontSize: 8.5, bold: true, margin: [0, 0, 0, 3] },
-                            data.imagenMuestraColorInterior
-                                ? { image: toDataUri(data.imagenMuestraColorInterior.buffer, data.imagenMuestraColorInterior.mimeType), width: 220 }
-                                : { text: '(Sin muestra adjunta)', fontSize: 8, italics: true, color: C.slate500 },
-                        ],
-                    },
+            ...chunk(
+                [
+                    ...data.coloresExteriores.map((c, i) => ({
+                        titulo: c.nombre
+                            ? `Melamina exterior — ${c.nombre}`
+                            : data.coloresExteriores.length > 1 ? `Melamina exterior ${i + 1}` : 'Melamina exterior',
+                        imagen: c.imagenMuestra,
+                    })),
+                    { titulo: 'Melamina interior', imagen: data.imagenMuestraColorInterior },
                 ],
+                2
+            ).map((par) => ({
+                columns: par.map((m) => ({
+                    width: '*' as const,
+                    stack: [
+                        { text: m.titulo, fontSize: 8.5, bold: true, margin: [0, 0, 0, 3] as [number, number, number, number] },
+                        m.imagen
+                            ? { image: toDataUri(m.imagen.buffer, m.imagen.mimeType), width: 220 }
+                            : { text: '(Sin muestra adjunta)', fontSize: 8, italics: true, color: C.slate500 },
+                    ],
+                })),
                 columnGap: 10,
-                margin: [0, 0, 0, 10],
-            },
+                margin: [0, 0, 0, 10] as [number, number, number, number],
+            })),
 
             capituloTitulo(5, 'REVISIÓN DE ACABADOS Y APROBACIÓN DE HOJA DE DISEÑO'),
             { text: '5.1 Visita al Taller para Revisión de Acabados', bold: true, fontSize: 9.5, margin: [0, 4, 0, 3] },

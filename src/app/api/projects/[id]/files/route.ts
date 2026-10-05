@@ -4,16 +4,21 @@ import { withAuth } from '@/lib/auth';
 import { handleError } from '@/lib/errors';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export const GET = withAuth(async (_req, { params }) => {
-  try {
-      const files = await (prisma as any).projectFile.findMany({
-          where: { projectId: params.id },
-          orderBy: {
-              fechaSubida: 'desc',
-          },
-      });
-    return NextResponse.json({ ok: true, data: files });
-  } catch (e) { return handleError(e); }
+export const GET = withAuth(async (_req, { params }, user) => {
+    try {
+        const files = await (prisma as any).projectFile.findMany({
+            where: {
+                projectId: params.id,
+                // Un trabajador nunca debe ver los archivos tipo CONTRATO —
+                // se filtra aquí, en el backend, no solo en la pantalla.
+                ...(user.roleName === 'TRABAJADOR' ? { tipo: { not: 'CONTRATO' } } : {}),
+            },
+            orderBy: {
+                fechaSubida: 'desc',
+            },
+        });
+        return NextResponse.json({ ok: true, data: files });
+    } catch (e) { return handleError(e); }
 });
 
 // File upload uses FormData — Next.js handles this natively

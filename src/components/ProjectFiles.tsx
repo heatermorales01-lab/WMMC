@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import { filesApi } from '@/lib/api';
 import { Spinner, Confirm } from './ui';
+import { useAuthStore } from '@/store/auth.store';
 
 const FILE_TYPES = [
   { value: 'CONTRATO',   label: 'Contrato',    icon: FileCheck },
@@ -44,7 +45,8 @@ export default function ProjectFiles({ projectId }: { projectId: string }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
+    const { isTrabajador } = useAuthStore();
+    const visibleFileTypes = isTrabajador ? FILE_TYPES.filter((t) => t.value !== 'CONTRATO') : FILE_TYPES;
     const load = async () => {
         try {
             const data = await filesApi.list(projectId);
@@ -102,15 +104,15 @@ export default function ProjectFiles({ projectId }: { projectId: string }) {
       <div className="flex gap-2 flex-wrap items-center p-4 bg-slate-50 rounded-lg border border-dashed border-slate-300">
         <Paperclip size={16} className="text-slate-400" />
         <span className="text-sm text-slate-500 mr-1">Tipo:</span>
-        <select
-          className="input py-1 text-sm w-40"
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value)}
-        >
-          {FILE_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
+              <select
+                  className="input py-1 text-sm w-40"
+                  value={selectedType}
+                  onChange={(e) => setSelectedType(e.target.value)}
+              >
+                  {visibleFileTypes.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+              </select>
 
         <input
           ref={inputRef}
@@ -138,7 +140,7 @@ export default function ProjectFiles({ projectId }: { projectId: string }) {
       ) : (
         <div className="space-y-1">
           {/* Agrupados */}
-          {FILE_TYPES.map(({ value, label }) => {
+          {visibleFileTypes.map(({ value, label }) => {
             const group = files.filter((f) => f.tipo === value);
             if (group.length === 0) return null;
             return (

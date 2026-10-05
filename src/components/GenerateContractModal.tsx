@@ -11,6 +11,11 @@ interface Props {
 
 interface Accesorio { nombre: string; monto: number; imagen?: File | null }
 
+// Un proyecto puede combinar varios colores externos (ej: un color para la
+// cocina, otro para el closet) — por eso es una lista repetible. El color
+// interior en cambio siempre es uno solo para todo el proyecto.
+interface ColorExterior { nombre: string; color: string; colorTapeta: string; imagen: File | null }
+
 interface CotizacionDesgloseItem {
     nombre: string;
     material: string;
@@ -49,12 +54,19 @@ const DRAFT_KEY = (projectId: string) => `contrato-borrador-${projectId}`;
 // Lo único que se guarda en el borrador local: texto y números. Las
 // imágenes (File) no se pueden guardar en localStorage, así que esas
 // siempre hay que volver a adjuntarlas si se recarga la página.
-function getDraftableForm(form: any, accesorios: Accesorio[], descripcionGeneralModo: string, quotationIdSeleccionada: string) {
+function getDraftableForm(
+    form: any,
+    accesorios: Accesorio[],
+    descripcionGeneralModo: string,
+    quotationIdSeleccionada: string,
+    coloresExteriores: ColorExterior[]
+) {
     return {
         form,
         accesorios: accesorios.map(({ nombre, monto }) => ({ nombre, monto })),
         descripcionGeneralModo,
         quotationIdSeleccionada,
+        coloresExteriores: coloresExteriores.map(({ nombre, color, colorTapeta }) => ({ nombre, color, colorTapeta })),
     };
 }
 
@@ -67,10 +79,8 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
         consumidorNombre: '',
         consumidorCedula: '',
         consumidorDomicilio: '',
-        colorExterior: '',
         colorInterior: '',
         colorSobre: '',
-        colorTapetaExterior: '',
         colorTapetaInterior: '',
         valorTotal: '',
         anticipo60: '',
@@ -81,6 +91,9 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
         observacionesGenerales: '',
     });
     const [accesorios, setAccesorios] = useState<Accesorio[]>([]);
+    const [coloresExteriores, setColoresExteriores] = useState<ColorExterior[]>([
+        { nombre: '', color: '', colorTapeta: '', imagen: null },
+    ]);
 
     // Descripción general: manual (imagen) o automática (desde cotización)
     const [descripcionGeneralModo, setDescripcionGeneralModo] = useState<'manual' | 'cotizacion'>('manual');
@@ -89,7 +102,6 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
 
     const [imagenDescripcionGeneral, setImagenDescripcionGeneral] = useState<File | null>(null);
     const [imagenesDescripcionVisual, setImagenesDescripcionVisual] = useState<File[]>([]);
-    const [imagenMuestraColorExterior, setImagenMuestraColorExterior] = useState<File | null>(null);
     const [imagenMuestraColorInterior, setImagenMuestraColorInterior] = useState<File | null>(null);
 
     const cargarPrefill = () => {
@@ -124,6 +136,11 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
                 setAccesorios((draft.accesorios || []).map((a: any) => ({ ...a, imagen: null })));
                 setDescripcionGeneralModo(draft.descripcionGeneralModo || 'manual');
                 setQuotationIdSeleccionada(draft.quotationIdSeleccionada || '');
+                setColoresExteriores(
+                    draft.coloresExteriores?.length
+                        ? draft.coloresExteriores.map((c: any) => ({ ...c, imagen: null }))
+                        : [{ nombre: '', color: '', colorTapeta: '', imagen: null }]
+                );
                 setHayBorrador(true);
             } catch {
                 // borrador corrupto, se ignora
@@ -159,9 +176,9 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
     // texto y números — las imágenes nunca se guardan ahí).
     useEffect(() => {
         if (loading) return;
-        const data = getDraftableForm(form, accesorios, descripcionGeneralModo, quotationIdSeleccionada);
+        const data = getDraftableForm(form, accesorios, descripcionGeneralModo, quotationIdSeleccionada, coloresExteriores);
         localStorage.setItem(DRAFT_KEY(projectId), JSON.stringify(data));
-    }, [form, accesorios, descripcionGeneralModo, quotationIdSeleccionada, loading, projectId]);
+    }, [form, accesorios, descripcionGeneralModo, quotationIdSeleccionada, coloresExteriores, loading, projectId]);
 
     const descartarBorrador = () => {
         localStorage.removeItem(DRAFT_KEY(projectId));
@@ -200,6 +217,15 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
     const removeAccesorio = (i: number) => setAccesorios((prev) => prev.filter((_, idx) => idx !== i));
     const totalAccesorios = accesorios.reduce((acc, a) => acc + Number(a.monto || 0), 0);
 
+    const updateColorExterior = (i: number, field: 'nombre' | 'color' | 'colorTapeta', value: string) => {
+        setColoresExteriores((prev) => prev.map((c, idx) => idx === i ? { ...c, [field]: value } : c));
+    };
+    const setColorExteriorImagen = (i: number, file: File | null) => {
+        setColoresExteriores((prev) => prev.map((c, idx) => idx === i ? { ...c, imagen: file } : c));
+    };
+    const addColorExterior = () => setColoresExteriores((prev) => [...prev, { nombre: '', color: '', colorTapeta: '', imagen: null }]);
+    const removeColorExterior = (i: number) => setColoresExteriores((prev) => prev.filter((_, idx) => idx !== i));
+
     const quotationSeleccionada = quotations.find((q) => q.id === quotationIdSeleccionada);
 
     const handleGenerate = async () => {
@@ -215,6 +241,12 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
             fd.append('accesorios', JSON.stringify(accesorios.map(({ nombre, monto }) => ({ nombre, monto }))));
             accesorios.forEach((a, i) => { if (a.imagen) fd.append(`accesorioImagen_${i}`, a.imagen); });
 
+            const coloresExterioresValidos = coloresExteriores.filter((c) => c.color.trim());
+            fd.append('coloresExteriores', JSON.stringify(
+                coloresExterioresValidos.map(({ nombre, color, colorTapeta }) => ({ nombre, color, colorTapeta }))
+            ));
+            coloresExterioresValidos.forEach((c, i) => { if (c.imagen) fd.append(`colorExteriorImagen_${i}`, c.imagen); });
+
             fd.append('descripcionGeneralModo', descripcionGeneralModo);
             if (descripcionGeneralModo === 'cotizacion' && quotationSeleccionada) {
                 // El desglose ya viene completo (dimensiones, accesorios por mueble,
@@ -225,7 +257,6 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
             }
 
             imagenesDescripcionVisual.forEach((f) => fd.append('imagenesDescripcionVisual', f));
-            if (imagenMuestraColorExterior) fd.append('imagenMuestraColorExterior', imagenMuestraColorExterior);
             if (imagenMuestraColorInterior) fd.append('imagenMuestraColorInterior', imagenMuestraColorInterior);
 
             const blob = await contractApi.generate(projectId, fd);
@@ -352,13 +383,53 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
 
                 <hr className="border-slate-200" />
 
-                <p className="text-xs font-semibold text-slate-500">Colores</p>
+                <div>
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-slate-500">
+                            Color(es) exterior(es) — agrega uno por cada mueble/área que use un color distinto (ej: Cocina, Closet)
+                        </p>
+                        <button type="button" className="btn-ghost btn-sm" onClick={addColorExterior}>+ Agregar color</button>
+                    </div>
+                    <div className="space-y-2 mt-2">
+                        {coloresExteriores.map((c, i) => (
+                            <div key={i} className="flex gap-2 items-center flex-wrap bg-slate-50 rounded-lg p-2">
+                                <input
+                                    className="input flex-1 min-w-[110px]"
+                                    placeholder="Área/mueble (opcional, ej: Cocina)"
+                                    value={c.nombre}
+                                    onChange={(e) => updateColorExterior(i, 'nombre', e.target.value)}
+                                />
+                                <input
+                                    className="input flex-1 min-w-[110px]"
+                                    placeholder="Color exterior"
+                                    value={c.color}
+                                    onChange={(e) => updateColorExterior(i, 'color', e.target.value)}
+                                />
+                                <input
+                                    className="input flex-1 min-w-[110px]"
+                                    placeholder="Tapeta (opcional)"
+                                    value={c.colorTapeta}
+                                    onChange={(e) => updateColorExterior(i, 'colorTapeta', e.target.value)}
+                                />
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="input w-40 text-xs"
+                                    title="Foto de muestra de este color (opcional)"
+                                    onChange={(e) => setColorExteriorImagen(i, e.target.files?.[0] || null)}
+                                />
+                                {coloresExteriores.length > 1 && (
+                                    <button type="button" className="btn-ghost btn-sm text-danger" onClick={() => removeColorExterior(i)}>✕</button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <FormGroup label="Color exterior"><input className="input" value={form.colorExterior} onChange={(e) => set('colorExterior', e.target.value)} /></FormGroup>
                     <FormGroup label="Color interior"><input className="input" value={form.colorInterior} onChange={(e) => set('colorInterior', e.target.value)} /></FormGroup>
-                    <FormGroup label="Sobre"><input className="input" value={form.colorSobre} onChange={(e) => set('colorSobre', e.target.value)} /></FormGroup>
-                    <FormGroup label="Tapeta exterior (opcional)"><input className="input" value={form.colorTapetaExterior} onChange={(e) => set('colorTapetaExterior', e.target.value)} /></FormGroup>
                     <FormGroup label="Tapeta interior (opcional)"><input className="input" value={form.colorTapetaInterior} onChange={(e) => set('colorTapetaInterior', e.target.value)} /></FormGroup>
+                    <FormGroup label="Sobre"><input className="input" value={form.colorSobre} onChange={(e) => set('colorSobre', e.target.value)} /></FormGroup>
                 </div>
 
                 <hr className="border-slate-200" />
@@ -410,14 +481,11 @@ export default function GenerateContractModal({ projectId, onClose }: Props) {
 
                 <hr className="border-slate-200" />
 
-                <p className="text-xs font-semibold text-slate-500">Imágenes (opcionales — descripción visual y muestras de color)</p>
+                <p className="text-xs font-semibold text-slate-500">Imágenes (opcionales — descripción visual y muestra de color interior)</p>
+                <p className="text-[11px] text-slate-400 -mt-1">La(s) muestra(s) de color exterior se suben arriba, junto a cada color.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <FormGroup label="Descripción visual (hasta 2 imágenes)">
                         <input type="file" accept="image/*" multiple className="input" onChange={(e) => setImagenesDescripcionVisual(Array.from(e.target.files || []).slice(0, 2))} />
-                    </FormGroup>
-                    <div />
-                    <FormGroup label="Muestra color exterior">
-                        <input type="file" accept="image/*" className="input" onChange={(e) => setImagenMuestraColorExterior(e.target.files?.[0] || null)} />
                     </FormGroup>
                     <FormGroup label="Muestra color interior">
                         <input type="file" accept="image/*" className="input" onChange={(e) => setImagenMuestraColorInterior(e.target.files?.[0] || null)} />

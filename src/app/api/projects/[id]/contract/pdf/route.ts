@@ -144,14 +144,30 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
             }
         }
 
+        // Uno o más colores externos (cada uno con nombre/área + su propia
+        // foto de muestra opcional) — el frontend manda la lista en JSON y
+        // cada imagen aparte, emparejada por posición: "colorExteriorImagen_<índice>".
+        let coloresExterioresRaw: { nombre: string; color: string; colorTapeta?: string }[] = [];
+        try {
+            coloresExterioresRaw = JSON.parse(getStr('coloresExteriores') || '[]');
+        } catch {
+            coloresExterioresRaw = [];
+        }
+        const coloresExteriores: ContractData['coloresExteriores'] = [];
+        for (let i = 0; i < coloresExterioresRaw.length; i++) {
+            coloresExteriores.push({
+                ...coloresExterioresRaw[i],
+                imagenMuestra: await readImage(`colorExteriorImagen_${i}`),
+            });
+        }
+
         const data: ContractData = {
             consumidorNombre: getStr('consumidorNombre'),
             consumidorCedula: getStr('consumidorCedula'),
             consumidorDomicilio: getStr('consumidorDomicilio'),
-            colorExterior: getStr('colorExterior'),
+            coloresExteriores,
             colorInterior: getStr('colorInterior'),
             colorSobre: getStr('colorSobre'),
-            colorTapetaExterior: getStr('colorTapetaExterior'),
             colorTapetaInterior: getStr('colorTapetaInterior'),
             valorTotal: getNum('valorTotal'),
             anticipo60: getNum('anticipo60'),
@@ -166,7 +182,6 @@ export const POST = withBlockTrabajador(async (req, { params }) => {
             cotizacionDesglose,
             imagenDescripcionGeneral: await readImage('imagenDescripcionGeneral'),
             imagenesDescripcionVisual: await readImages('imagenesDescripcionVisual'),
-            imagenMuestraColorExterior: await readImage('imagenMuestraColorExterior'),
             imagenMuestraColorInterior: await readImage('imagenMuestraColorInterior'),
             referenciasVisuales,
         };

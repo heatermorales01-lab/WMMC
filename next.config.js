@@ -1,7 +1,7 @@
-/** @type {import('next').NextConfig} */
+﻿/** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', 'pdfmake'],
-  },
+    experimental: {
+        serverComponentsExternalPackages: ['@prisma/client', 'pdfmake'],
+    },
 };
 module.exports = nextConfig;
