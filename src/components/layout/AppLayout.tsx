@@ -278,6 +278,10 @@ export default function AppLayout({
                         </div>
 
                     </div>
+
+                    <p className="text-center text-[10px] text-slate-400 pb-3">
+                        v{process.env.NEXT_PUBLIC_APP_VERSION}
+                    </p>
                 </aside>
 
                 {/* MAIN */}
