@@ -601,6 +601,20 @@ model WageThreshold {
   @@map("wage_thresholds")
 }
 
+// Switch de administrador (una sola fila) para activar/desactivar la
+// comprobación de geocerca al marcar entrada/salida/descansos. Pensado
+// para los días en que el GPS del taller falla: en vez de bloquear a
+// todo el mundo, la admin la desactiva temporalmente desde la app sin
+// tocar código ni hacer redeploy. Por defecto (sin fila creada) está
+// activa — ver geofenceActivo() en src/lib/geofence.ts.
+model GeofenceConfig {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activo    Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("geofence_configs")
+}
+
 // =====================================
 // AUDIENCIA DEL EVENTO
 // =====================================
