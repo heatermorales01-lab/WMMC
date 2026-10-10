@@ -12,7 +12,7 @@ import { validarUbicacionTallerMultiple } from '@/lib/geofence';
 export const POST = withAuth(async (req, _ctx, user) => {
     try {
         const { muestras } = await req.json().catch(() => ({}));
-        const ubicacion = validarUbicacionTallerMultiple(muestras); if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
+        const ubicacion = await validarUbicacionTallerMultiple(muestras); if (!ubicacion.ok) throw new AppError(ubicacion.mensaje!, 403);
 
         const current = now();
 

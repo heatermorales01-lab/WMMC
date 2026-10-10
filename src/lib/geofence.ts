@@ -1,4 +1,6 @@
-﻿// Geocerca del taller — usada solo en las rutas de marcar entrada/salida/
+﻿import { prisma } from '@/lib/prisma';
+
+// Geocerca del taller — usada solo en las rutas de marcar entrada/salida/
 // descansos del control de horario. El resto de la app (calendario,
 // cotizaciones, etc.) no se ve afectado.
 //
@@ -131,7 +133,19 @@ function dentroDelPoligono(x: number, y: number, poligono: { x: number; y: numbe
     return true;
 }
 
-export function validarUbicacionTaller(lat?: number, lng?: number): { ok: boolean; distancia?: number; mensaje?: string } {
+// Switch de administrador: permite desactivar la comprobación de ubicación
+// por completo (por ejemplo cuando el GPS del taller anda fallando) sin
+// tocar código ni hacer redeploy. Fila única en la base de datos, mismo
+// patrón que BreakPolicy / WageThreshold. Por defecto, si no hay fila
+// creada todavía, la comprobación está ACTIVADA.
+export async function geofenceActivo(): Promise<boolean> {
+    const config = await (prisma as any).geofenceConfig.findFirst();
+    return config?.activo ?? true;
+}
+
+export async function validarUbicacionTaller(lat?: number, lng?: number): Promise<{ ok: boolean; distancia?: number; mensaje?: string }> {
+    if (!(await geofenceActivo())) return { ok: true };
+
     if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
         return {
             ok: false,
@@ -161,7 +175,9 @@ export interface MuestraUbicacion { lat: number; lng: number }
 // realmente está en el taller casi siempre va a tener al menos una lectura
 // precisa entre 3 intentos, mientras que alguien fuera del taller no va a
 // "saltar" por casualidad hasta caer adentro.
-export function validarUbicacionTallerMultiple(muestras?: MuestraUbicacion[]): { ok: boolean; distancia?: number; mensaje?: string } {
+export async function validarUbicacionTallerMultiple(muestras?: MuestraUbicacion[]): Promise<{ ok: boolean; distancia?: number; mensaje?: string }> {
+    if (!(await geofenceActivo())) return { ok: true };
+
     if (!muestras || muestras.length === 0) {
         return {
             ok: false,
