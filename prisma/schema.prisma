@@ -779,6 +779,12 @@ model ExamAttempt {
 
   observacionesEvaluador String? @map("observaciones_evaluador") @db.Text
 
+  // Un trabajador NO puede repetir un examen ya revisado. Solo si el
+  // administrador lo autoriza (marcando este intento revisado) se le
+  // habilita un intento nuevo. Al empezar el nuevo intento la
+  // autorización queda consumida (deja de ser el último intento).
+  reintentoAutorizado Boolean @default(false) @map("reintento_autorizado")
+
   fechaCreacion DateTime  @default(now()) @map("fecha_creacion")
   fechaEnvio    DateTime? @map("fecha_envio")
   fechaRevision DateTime? @map("fecha_revision")

@@ -27,6 +27,12 @@ export const GET = withAdmin(async (_req, { params }) => {
     });
     if (!attempt) throw new AppError('Intento no encontrado', 404);
 
+    const posterior = await (prisma as any).examAttempt.findFirst({
+      where: { examId: attempt.examId, workerId: attempt.workerId, fechaCreacion: { gt: attempt.fechaCreacion } },
+      select: { id: true },
+    });
+    const esUltimo = !posterior;
+
     const respuestasPorPregunta = new Map(attempt.respuestas.map((r: any) => [r.questionId, r]));
 
     const secciones = attempt.exam.secciones.map((s: any) => ({
@@ -76,6 +82,8 @@ export const GET = withAdmin(async (_req, { params }) => {
         resultadoPractica: attempt.resultadoPractica,
         observacionesPractica: attempt.observacionesPractica,
         observacionesEvaluador: attempt.observacionesEvaluador,
+        reintentoAutorizado: attempt.reintentoAutorizado,
+        esUltimo: esUltimo,
         secciones,
       },
     });

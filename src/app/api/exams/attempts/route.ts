@@ -25,6 +25,19 @@ export const GET = withAdmin(async (req) => {
       },
     });
 
+    // ¿Es este el último intento de ese trabajador en ese examen? Solo
+    // sobre el último tiene sentido autorizar un nuevo intento.
+    const todos = await (prisma as any).examAttempt.findMany({
+      where: { workerId: { in: attempts.map((a: any) => a.workerId) }, examId: { in: attempts.map((a: any) => a.examId) } },
+      select: { id: true, workerId: true, examId: true, fechaCreacion: true },
+    });
+    const ultimoPor = new Map<string, any>();
+    for (const t of todos) {
+      const k = `${t.workerId}:${t.examId}`;
+      const prev = ultimoPor.get(k);
+      if (!prev || new Date(t.fechaCreacion) > new Date(prev.fechaCreacion)) ultimoPor.set(k, t);
+    }
+
     const data = attempts.map((a: any) => ({
       id: a.id,
       examNombre: a.exam.nombre,
@@ -37,6 +50,8 @@ export const GET = withAdmin(async (req) => {
       notaFinal: a.notaFinal,
       puntajeMaximo: a.puntajeMaximo,
       evaluador: a.evaluador?.nombre || null,
+      reintentoAutorizado: a.reintentoAutorizado,
+      esUltimo: ultimoPor.get(`${a.workerId}:${a.examId}`)?.id === a.id,
     }));
 
     return NextResponse.json({ ok: true, data });

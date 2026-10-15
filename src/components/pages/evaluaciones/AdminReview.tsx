@@ -27,12 +27,15 @@ function RevisarIntento({ attemptId, onBack }: { attemptId: string; onBack: () =
   const [obsGenerales, setObsGenerales] = useState('');
   const [confirmando, setConfirmando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  const [autorizando, setAutorizando] = useState(false);
 
   const cargar = () => examsApi.review(attemptId).then((d) => {
     setData(d);
     const n: any = {};
     d.secciones.forEach((s: any) => s.preguntas.forEach((p: any) => {
-      if (p.tipo === 'ABIERTA') n[p.id] = { puntaje: p.respuesta?.calificada ? String(p.respuesta.puntajeObtenido) : '', obs: p.respuesta?.observacionEvaluador || '' };
+      n[p.id] = p.tipo === 'ABIERTA'
+        ? { puntaje: p.respuesta?.calificada ? String(p.respuesta.puntajeObtenido) : '', obs: p.respuesta?.observacionEvaluador || '' }
+        : { puntaje: '', obs: p.respuesta?.observacionEvaluador || '' };
     }));
     setNotas((prev) => ({ ...n, ...prev }));
     setResultadoPractica(d.resultadoPractica || '');
@@ -43,6 +46,26 @@ function RevisarIntento({ attemptId, onBack }: { attemptId: string; onBack: () =
 
   if (!data) return <div className="flex justify-center py-10"><Spinner /></div>;
   const revisado = data.estado === 'REVISADO';
+
+  const cambiarReintento = async (autorizar: boolean) => {
+    setAutorizando(true);
+    try {
+      const res = autorizar ? await examsApi.authorizeRetake(attemptId) : await examsApi.revokeRetake(attemptId);
+      toast.success(res.message);
+      await cargar();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'No se pudo actualizar'); }
+    finally { setAutorizando(false); }
+  };
+
+  const guardarObservacion = async (p: any) => {
+    setGuardando(p.id);
+    try {
+      await examsApi.grade(attemptId, { questionId: p.id, puntajeObtenido: 0, observacionEvaluador: notas[p.id]?.obs || '' });
+      toast.success('Observación guardada');
+      await cargar();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Error al guardar'); }
+    finally { setGuardando(null); }
+  };
 
   const calificar = async (p: any) => {
     const n = notas[p.id];
@@ -126,6 +149,17 @@ function RevisarIntento({ attemptId, onBack }: { attemptId: string; onBack: () =
                     })}
                     {!r?.opcionId && <p className="text-xs text-amber-600">Sin responder</p>}
                     <p className="text-xs text-slate-500">Puntaje automático: {r?.puntajeObtenido ?? 0}/{p.puntaje}{correcta ? '' : ' (sin clave definida)'}</p>
+                    {revisado ? (
+                      r?.observacionEvaluador && <p className="text-sm"><span className="font-semibold">Observación:</span> {r.observacionEvaluador}</p>
+                    ) : (
+                      <div className="flex flex-wrap items-start gap-2">
+                        <input className="input flex-1 min-w-[200px]" placeholder="Observación para el trabajador (opcional)"
+                          value={notas[p.id]?.obs ?? ''} onChange={(e) => setNotas((n) => ({ ...n, [p.id]: { ...n[p.id], obs: e.target.value } }))} />
+                        <button className="btn-secondary btn-sm" disabled={guardando === p.id} onClick={() => guardarObservacion(p)}>
+                          {guardando === p.id ? <Spinner size="sm" /> : 'Guardar observación'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -171,6 +205,24 @@ function RevisarIntento({ attemptId, onBack }: { attemptId: string; onBack: () =
           <label className="label">Observaciones y necesidades de capacitación</label>
           <textarea className="input min-h-[80px]" disabled={revisado} value={obsGenerales} onChange={(e) => setObsGenerales(e.target.value)} />
         </div>
+        {revisado && (
+          <div className="rounded-lg border p-3 space-y-2">
+            <p className="text-sm font-semibold text-slate-800">Nuevo intento</p>
+            {data.reintentoAutorizado ? (
+              <>
+                <p className="text-xs text-green-700">Autorizaste que el trabajador repita este examen. Aún no lo ha iniciado.</p>
+                <button className="btn-secondary btn-sm" disabled={autorizando} onClick={() => cambiarReintento(false)}>Revocar autorización</button>
+              </>
+            ) : data.esUltimo ? (
+              <>
+                <p className="text-xs text-slate-500">El trabajador no puede repetir el examen a menos que lo autorices aquí.</p>
+                <button className="btn-primary btn-sm" disabled={autorizando} onClick={() => cambiarReintento(true)}>Autorizar nuevo intento</button>
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">El trabajador ya tiene un intento posterior a este.</p>
+            )}
+          </div>
+        )}
         {!revisado && (
           <button className="btn-primary justify-center" disabled={pendientes > 0} onClick={() => setConfirmando(true)}
             title={pendientes > 0 ? 'Califica todas las respuestas abiertas primero' : ''}>
@@ -221,7 +273,7 @@ export default function AdminReview() {
                   <td>{a.examNombre}</td>
                   <td>{fmtFecha(a.fechaEnvio)}</td>
                   <td><span className={ESTADO[a.estado].clase}>{ESTADO[a.estado].texto}</span></td>
-                  <td>{a.estado === 'REVISADO' ? `${a.notaFinal}/${a.puntajeMaximo}` : '—'}</td>
+                  <td>{a.estado === 'REVISADO' ? `${a.notaFinal}/${a.puntajeMaximo}` : '—'}{a.reintentoAutorizado && <span className="badge-info ml-2">Reintento autorizado</span>}</td>
                   <td>{a.estado !== 'EN_PROGRESO' && <button className="btn-secondary btn-sm" onClick={() => setAbierto(a.id)}>{a.estado === 'REVISADO' ? 'Ver' : 'Revisar'}</button>}</td>
                 </tr>
               ))}

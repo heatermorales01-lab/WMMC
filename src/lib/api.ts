@@ -369,6 +369,8 @@ export const examsApi = {
     review: (attemptId: string) => api.get(`/exams/attempts/${attemptId}/review`).then((r) => r.data.data),
     grade: (attemptId: string, data: { questionId: string; puntajeObtenido: number; observacionEvaluador?: string }) =>
         api.patch(`/exams/attempts/${attemptId}/grade`, data).then((r) => r.data),
+    authorizeRetake: (attemptId: string) => api.post(`/exams/attempts/${attemptId}/retake`).then((r) => r.data),
+    revokeRetake: (attemptId: string) => api.delete(`/exams/attempts/${attemptId}/retake`).then((r) => r.data),
     finalize: (attemptId: string, data: { resultadoPractica?: string; observacionesPractica?: string; observacionesEvaluador?: string }) =>
         api.post(`/exams/attempts/${attemptId}/finalize`, data).then((r) => r.data),
 

@@ -32,6 +32,7 @@ export const GET = withAuth(async (_req, _ctx, user) => {
         descripcion: e.descripcion,
         duracionMinutos: e.duracionMinutos,
         puntajeMaximo,
+        puedeReintentar: !!ultimoIntento?.reintentoAutorizado,
         ultimoIntento: ultimoIntento
           ? {
               id: ultimoIntento.id,

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { ClipboardCheck, ArrowLeft, CheckCircle2, Clock } from 'lucide-react';
+import { ClipboardCheck, ArrowLeft, CheckCircle2, Clock, XCircle, MinusCircle, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { examsApi } from '@/lib/api';
 import { Spinner, Confirm, EmptyState } from '@/components/ui';
@@ -16,6 +16,75 @@ const ESTADO_LABEL: Record<string, { texto: string; clase: string }> = {
   EN_REVISION: { texto: 'Pendiente de revisión', clase: 'badge-info' },
   REVISADO: { texto: 'Revisado', clase: 'badge-success' },
 };
+
+// ─── Examen ya evaluado: qué ganó, qué perdió y la observación por pregunta ───
+const RESULTADO: Record<string, { texto: string; clase: string; Icono: any }> = {
+  GANADA: { texto: 'Ganada', clase: 'text-green-700 bg-green-50 border-green-200', Icono: CheckCircle2 },
+  PERDIDA: { texto: 'Perdida', clase: 'text-red-700 bg-red-50 border-red-200', Icono: XCircle },
+  PARCIAL: { texto: 'Parcial', clase: 'text-amber-700 bg-amber-50 border-amber-200', Icono: MinusCircle },
+  SIN_PUNTAJE: { texto: 'No suma a la nota', clase: 'text-slate-600 bg-slate-50 border-slate-200', Icono: MessageSquare },
+};
+
+function ExamenRevisado({ secciones }: { secciones: any[] }) {
+  if (secciones.length === 0) return null;
+  const contables = secciones.filter((s) => !s.opcional).flatMap((s) => s.preguntas);
+  const ganadas = contables.filter((p: any) => p.resultado === 'GANADA').length;
+  const parciales = contables.filter((p: any) => p.resultado === 'PARCIAL').length;
+  const perdidas = contables.filter((p: any) => p.resultado === 'PERDIDA').length;
+
+  return (
+    <div className="space-y-4 pt-2">
+      <h3 className="font-display font-bold text-slate-900">Tu examen evaluado</h3>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg border border-green-200 bg-green-50 p-2"><p className="text-xs text-green-700">Ganadas</p><p className="font-bold text-green-700">{ganadas}</p></div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2"><p className="text-xs text-amber-700">Parciales</p><p className="font-bold text-amber-700">{parciales}</p></div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-2"><p className="text-xs text-red-700">Perdidas</p><p className="font-bold text-red-700">{perdidas}</p></div>
+      </div>
+      {secciones.map((sec) => (
+        <div key={sec.id} className="space-y-3">
+          <h4 className="font-semibold text-slate-800">{sec.nombre}{sec.opcional && <span className="ml-2 text-xs font-normal text-slate-400">(no suma a la nota)</span>}</h4>
+          {sec.preguntas.map((p: any, i: number) => {
+            const R = RESULTADO[p.resultado];
+            const r = p.respuesta;
+            return (
+              <div key={p.id} className={`rounded-xl border p-4 space-y-2 ${R.clase.split(' ').filter((c) => c.startsWith('border')).join(' ')}`}>
+                <div className="flex justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-800">{i + 1}. {p.enunciado}</p>
+                  <span className={`h-fit whitespace-nowrap inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${R.clase}`}>
+                    <R.Icono size={13} /> {R.texto}{p.resultado !== 'SIN_PUNTAJE' ? ` · ${r.puntajeObtenido}/${p.puntaje}` : ''}
+                  </span>
+                </div>
+                {p.tipo === 'SELECCION_UNICA' ? (
+                  <div className="space-y-1">
+                    {p.opciones.map((o: any) => {
+                      const elegida = r.opcionId === o.id;
+                      return (
+                        <div key={o.id} className={`rounded-lg border px-3 py-1.5 text-sm ${elegida ? 'border-slate-400 bg-white font-semibold' : 'border-transparent text-slate-500'}`}>
+                          {o.texto}{elegida && <span className="ml-2 text-xs text-slate-500">← tu respuesta</span>}
+                        </div>
+                      );
+                    })}
+                    {!r.opcionId && <p className="text-xs text-amber-600">No respondiste esta pregunta</p>}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border bg-white p-3 text-sm whitespace-pre-wrap">
+                    {r.textoRespuesta?.trim() ? r.textoRespuesta : <span className="text-amber-600">No respondiste esta pregunta</span>}
+                  </div>
+                )}
+                {r.observacionEvaluador && (
+                  <div className="rounded-lg bg-white border p-3 text-sm text-slate-700 flex gap-2">
+                    <MessageSquare size={15} className="mt-0.5 text-slate-400 shrink-0" />
+                    <div><p className="text-xs font-semibold text-slate-500">Observación del evaluador</p><p className="whitespace-pre-wrap">{r.observacionEvaluador}</p></div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ─── Pantalla de resultado (solo cuando el admin ya revisó) ───
 function ResultadoIntento({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
@@ -52,6 +121,7 @@ function ResultadoIntento({ attemptId, onBack }: { attemptId: string; onBack: ()
               </div>
             )}
             <p className="text-xs text-slate-400">Esta nota es teórica y no autoriza por sí sola a operar maquinaria; la competencia práctica la verifica una persona autorizada.</p>
+            <ExamenRevisado secciones={data.secciones || []} />
           </>
         )}
       </div>
@@ -254,12 +324,12 @@ export default function WorkerExams() {
             <div className="flex gap-2">
               {u && u.estado !== 'EN_PROGRESO' && (
                 <button className="btn-secondary btn-sm" onClick={() => setVista({ tipo: 'resultado', attemptId: u.id })}>
-                  {u.estado === 'REVISADO' ? 'Ver resultado' : 'Ver estado'}
+                  {u.estado === 'REVISADO' ? 'Ver examen y resultado' : 'Ver estado'}
                 </button>
               )}
-              {(!u || u.estado === 'EN_PROGRESO' || u.estado === 'REVISADO') && (
+              {(!u || u.estado === 'EN_PROGRESO' || (u.estado === 'REVISADO' && e.puedeReintentar)) && (
                 <button className="btn-primary btn-sm" onClick={() => setVista({ tipo: 'tomar', examId: e.id })}>
-                  {u?.estado === 'EN_PROGRESO' ? 'Continuar' : u ? 'Repetir examen' : 'Comenzar'}
+                  {u?.estado === 'EN_PROGRESO' ? 'Continuar' : u ? 'Repetir examen (autorizado)' : 'Comenzar'}
                 </button>
               )}
             </div>

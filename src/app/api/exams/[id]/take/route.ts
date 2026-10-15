@@ -75,7 +75,8 @@ export const GET = withAuth(async (_req, { params }, user) => {
 // POST — inicia un intento nuevo, o retoma el EN_PROGRESO si ya existe
 // (para que recargar la página o perder conexión a mitad del examen no
 // cree un segundo intento). Si ya hay uno ENVIADO/EN_REVISION pendiente
-// de que el admin lo revise, no deja empezar otro.
+// de que el admin lo revise, no deja empezar otro. Tampoco deja repetir
+// un examen ya revisado salvo autorización expresa del administrador.
 export const POST = withAuth(async (req, { params }, user) => {
   try {
     const { puesto } = await req.json().catch(() => ({}));
@@ -96,6 +97,16 @@ export const POST = withAuth(async (req, { params }, user) => {
         return NextResponse.json({ ok: true, data: { id: existente.id }, message: 'Continuando intento en curso' });
       }
       throw new AppError('Ya tienes un intento enviado pendiente de revisión para este examen', 409);
+    }
+
+    // Un examen ya revisado NO se puede repetir, salvo que el administrador
+    // haya autorizado un nuevo intento sobre el último intento revisado.
+    const ultimo = await (prisma as any).examAttempt.findFirst({
+      where: { examId: params.id, workerId: user.userId },
+      orderBy: { fechaCreacion: 'desc' },
+    });
+    if (ultimo && !ultimo.reintentoAutorizado) {
+      throw new AppError('Ya realizaste este examen. Solo un administrador puede autorizarte a repetirlo.', 403);
     }
 
     const attempt = await (prisma as any).examAttempt.create({

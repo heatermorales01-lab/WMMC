@@ -13,7 +13,15 @@ export const GET = withAuth(async (_req, { params }, user) => {
     const attempt = await (prisma as any).examAttempt.findUnique({
       where: { id: params.attemptId },
       include: {
-        exam: { select: { nombre: true } },
+        exam: {
+          select: {
+            nombre: true,
+            secciones: {
+              orderBy: { orden: 'asc' },
+              include: { preguntas: { orderBy: { orden: 'asc' }, include: { opciones: { orderBy: { orden: 'asc' } } } } },
+            },
+          },
+        },
         evaluador: { select: { nombre: true } },
         respuestas: true,
       },
@@ -22,6 +30,41 @@ export const GET = withAuth(async (_req, { params }, user) => {
     if (attempt.workerId !== user.userId) throw new AppError('Sin permiso', 403);
 
     const revisado = attempt.estado === 'REVISADO';
+
+    // Examen ya evaluado, pregunta por pregunta (solo cuando está REVISADO).
+    // Incluye lo que respondió el trabajador, cuánto ganó y la observación
+    // del evaluador. NUNCA incluye `esCorrecta` ni `guiaEvaluador`.
+    const respuestaPorPregunta = new Map<string, any>(attempt.respuestas.map((r: any) => [r.questionId, r]));
+    const secciones = revisado
+      ? attempt.exam.secciones.map((s: any) => ({
+          id: s.id,
+          nombre: s.nombre,
+          opcional: s.opcional,
+          preguntas: s.preguntas.map((p: any) => {
+            const r = respuestaPorPregunta.get(p.id);
+            const puntaje = Number(p.puntaje);
+            const obtenido = r?.calificada ? Number(r.puntajeObtenido || 0) : 0;
+            let resultado: 'GANADA' | 'PERDIDA' | 'PARCIAL' | 'SIN_PUNTAJE' = 'PERDIDA';
+            if (s.opcional) resultado = 'SIN_PUNTAJE';
+            else if (obtenido >= puntaje) resultado = 'GANADA';
+            else if (obtenido > 0) resultado = 'PARCIAL';
+            return {
+              id: p.id,
+              tipo: p.tipo,
+              enunciado: p.enunciado,
+              puntaje,
+              opciones: p.opciones.map((o: any) => ({ id: o.id, texto: o.texto })),
+              respuesta: {
+                opcionId: r?.opcionId ?? null,
+                textoRespuesta: r?.textoRespuesta ?? null,
+                puntajeObtenido: s.opcional ? null : obtenido,
+                observacionEvaluador: r?.observacionEvaluador ?? null,
+              },
+              resultado,
+            };
+          }),
+        }))
+      : null;
 
     return NextResponse.json({
       ok: true,
@@ -45,6 +88,8 @@ export const GET = withAuth(async (_req, { params }, user) => {
         notaFinal: revisado ? attempt.notaFinal : null,
         observacionesEvaluador: revisado ? attempt.observacionesEvaluador : null,
         evaluador: revisado ? attempt.evaluador?.nombre : null,
+        secciones,
+        reintentoAutorizado: attempt.reintentoAutorizado,
       },
     });
   } catch (e) { return handleError(e); }
