@@ -351,3 +351,43 @@ export const contractApi = {
             responseType: 'blob',
         }).then((r) => r.data),
 };
+// ─── EVALUACIONES (EXÁMENES) ────────────────────────────
+export const examsApi = {
+    // Trabajador / empleado
+    available: () => api.get('/exams/available').then((r) => r.data.data),
+    take: (examId: string) => api.get(`/exams/${examId}/take`).then((r) => r.data.data),
+    startAttempt: (examId: string, puesto?: string) =>
+        api.post(`/exams/${examId}/take`, { puesto }).then((r) => r.data),
+    myAttempt: (attemptId: string) => api.get(`/exams/attempts/${attemptId}`).then((r) => r.data.data),
+    saveAnswer: (attemptId: string, data: { questionId: string; opcionId?: string | null; textoRespuesta?: string | null }) =>
+        api.patch(`/exams/attempts/${attemptId}`, data).then((r) => r.data),
+    submit: (attemptId: string) => api.post(`/exams/attempts/${attemptId}/submit`).then((r) => r.data),
+
+    // Administrador — revisión
+    attempts: (params?: { estado?: string; examId?: string }) =>
+        api.get('/exams/attempts', { params }).then((r) => r.data.data),
+    review: (attemptId: string) => api.get(`/exams/attempts/${attemptId}/review`).then((r) => r.data.data),
+    grade: (attemptId: string, data: { questionId: string; puntajeObtenido: number; observacionEvaluador?: string }) =>
+        api.patch(`/exams/attempts/${attemptId}/grade`, data).then((r) => r.data),
+    finalize: (attemptId: string, data: { resultadoPractica?: string; observacionesPractica?: string; observacionesEvaluador?: string }) =>
+        api.post(`/exams/attempts/${attemptId}/finalize`, data).then((r) => r.data),
+
+    // Administrador — constructor
+    list: () => api.get('/exams').then((r) => r.data.data),
+    get: (id: string) => api.get(`/exams/${id}`).then((r) => r.data.data),
+    create: (data: { nombre: string; descripcion?: string; instrucciones?: string; duracionMinutos?: number | string }) =>
+        api.post('/exams', data).then((r) => r.data),
+    update: (id: string, data: any) => api.put(`/exams/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/exams/${id}`).then((r) => r.data),
+    toggle: (id: string) => api.patch(`/exams/${id}/toggle`).then((r) => r.data),
+    addSection: (examId: string, data: { nombre: string; opcional?: boolean }) =>
+        api.post(`/exams/${examId}/sections`, data).then((r) => r.data),
+    updateSection: (sectionId: string, data: { nombre: string; opcional?: boolean }) =>
+        api.put(`/exams/sections/${sectionId}`, data).then((r) => r.data),
+    removeSection: (sectionId: string) => api.delete(`/exams/sections/${sectionId}`).then((r) => r.data),
+    addQuestion: (sectionId: string, data: any) =>
+        api.post(`/exams/sections/${sectionId}/questions`, data).then((r) => r.data),
+    updateQuestion: (questionId: string, data: any) =>
+        api.put(`/exams/questions/${questionId}`, data).then((r) => r.data),
+    removeQuestion: (questionId: string) => api.delete(`/exams/questions/${questionId}`).then((r) => r.data),
+};
