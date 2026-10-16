@@ -47,6 +47,9 @@ model User {
   inventoryAuditLogs InventoryAuditLog[]
   timesheetAuditLogsAsAdmin      TimesheetAuditLog[] @relation("TimesheetAuditAdmin")
   timesheetAuditLogsAsTrabajador TimesheetAuditLog[] @relation("TimesheetAuditTrabajador")
+  examsCreados          Exam[]
+  examAttemptsTrabajador ExamAttempt[] @relation("ExamAttemptTrabajador")
+  examAttemptsEvaluador  ExamAttempt[] @relation("ExamAttemptEvaluador")
 
   @@map("users")
 }
@@ -647,4 +650,173 @@ model CalendarEvent {
   createdBy User     @relation(fields: [createdById], references: [id])
 
   @@map("calendar_events")
+}
+// =====================================
+// EVALUACIONES DE CONOCIMIENTOS (EXÁMENES)
+// =====================================
+// Módulo genérico de exámenes, estilo "Google Forms": las preguntas NO
+// están quemadas en código, viven en la base de datos. El examen de
+// "Evaluación de conocimientos del taller WM" es solo el primer contenido
+// cargado (ver prisma/seed-exam.ts) — el admin puede crear exámenes nuevos
+// desde la app (constructor en /evaluaciones).
+//
+// Flujo: Exam → ExamSection → ExamQuestion (→ ExamOption si es de
+// selección única). ExamAttempt es un intento de un trabajador sobre un
+// Exam; ExamAnswer es su respuesta a cada pregunta. Las preguntas de
+// selección única se autocalifican al enviar el examen; las abiertas
+// quedan "calificada: false" hasta que un administrador les asigna
+// puntaje manualmente.
+
+enum TipoPreguntaExamen {
+  SELECCION_UNICA
+  ABIERTA
+}
+
+enum EstadoIntentoExamen {
+  EN_PROGRESO // el trabajador lo está completando
+  ENVIADO     // recién enviado, aún no procesado (estado transitorio interno)
+  EN_REVISION // tiene respuestas abiertas o preguntas críticas pendientes de calificar
+  REVISADO    // el administrador finalizó la revisión; nota final visible al trabajador
+}
+
+// Plantilla de examen — reutilizable, versionable.
+model Exam {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre          String   @db.VarChar(150)
+  descripcion     String?  @db.Text
+  instrucciones   String?  @db.Text
+  duracionMinutos Int?     @map("duracion_minutos")
+  version         Int      @default(1)
+  // Borrador (no visible a trabajadores) hasta que el admin lo publica.
+  activo          Boolean  @default(false)
+  createdById     String   @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  creador   User          @relation(fields: [createdById], references: [id])
+  secciones ExamSection[]
+  intentos  ExamAttempt[]
+
+  @@map("exams")
+}
+
+// Secciones del examen (ej. Herramientas, Hoja de corte, Enchapadora,
+// Sierra, Seguridad, Casos prácticos). `opcional` = no suma al puntaje
+// de 100 (ej. casos prácticos orales).
+model ExamSection {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  examId    String  @map("exam_id") @db.Uuid
+  nombre    String  @db.VarChar(150)
+  orden     Int     @default(0)
+  opcional  Boolean @default(false)
+
+  exam      Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  preguntas ExamQuestion[]
+
+  @@map("exam_sections")
+}
+
+model ExamQuestion {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sectionId        String             @map("section_id") @db.Uuid
+  tipo             TipoPreguntaExamen
+  enunciado        String             @db.Text
+  puntaje          Float
+  orden            Int                @default(0)
+  // Solo visible para administradores — guía de qué debe contener una
+  // buena respuesta abierta, o justificación de la respuesta correcta.
+  guiaEvaluador    String?            @map("guia_evaluador") @db.Text
+  // Preguntas sobre intervenir maquinaria en movimiento, quitar
+  // protecciones, destrabar atascos, etc. Fuerza revisión del admin
+  // aunque la pregunta sea de selección única y se autocalifique bien —
+  // NUNCA se usa la nota para autorizar operar una máquina.
+  criticaSeguridad Boolean            @default(false) @map("critica_seguridad")
+
+  section    ExamSection  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  opciones   ExamOption[]
+  respuestas ExamAnswer[]
+
+  @@map("exam_questions")
+}
+
+// Opciones de una pregunta de selección única. `esCorrecta` es la clave
+// de respuestas — jamás se envía al trabajador, solo se usa en el
+// backend para autocalificar y en las rutas de administrador.
+model ExamOption {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String  @map("question_id") @db.Uuid
+  texto      String  @db.VarChar(300)
+  orden      Int     @default(0)
+  esCorrecta Boolean @default(false) @map("es_correcta")
+
+  question           ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  respuestasElegidas ExamAnswer[]
+
+  @@map("exam_options")
+}
+
+// Un intento de un trabajador sobre un examen.
+model ExamAttempt {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  examId    String @map("exam_id") @db.Uuid
+  workerId  String @map("worker_id") @db.Uuid
+  puesto    String? @db.VarChar(100)
+
+  evaluadorId String? @map("evaluador_id") @db.Uuid
+
+  estado EstadoIntentoExamen @default(EN_PROGRESO)
+
+  // Puntaje posible total al momento del intento — se "congela" aquí
+  // para que un cambio futuro al examen no altere intentos ya enviados.
+  puntajeMaximo     Float?
+  puntajeAutomatico Float? @map("puntaje_automatico") // suma de preguntas de selección única
+  puntajeManual     Float? @map("puntaje_manual")     // suma de preguntas abiertas ya calificadas
+  notaFinal         Float? @map("nota_final")         // = puntajeAutomatico + puntajeManual, solo al estar REVISADO
+
+  // Sección opcional de caso práctico oral/manual — la registra el evaluador.
+  resultadoPractica     String? @map("resultado_practica") @db.VarChar(20) // SI | NO | N/A
+  observacionesPractica String? @map("observaciones_practica") @db.Text
+
+  observacionesEvaluador String? @map("observaciones_evaluador") @db.Text
+
+  // Un trabajador NO puede repetir un examen ya revisado. Solo si el
+  // administrador lo autoriza (marcando este intento revisado) se le
+  // habilita un intento nuevo. Al empezar el nuevo intento la
+  // autorización queda consumida (deja de ser el último intento).
+  reintentoAutorizado Boolean @default(false) @map("reintento_autorizado")
+
+  fechaCreacion DateTime  @default(now()) @map("fecha_creacion")
+  fechaEnvio    DateTime? @map("fecha_envio")
+  fechaRevision DateTime? @map("fecha_revision")
+
+  exam       Exam         @relation(fields: [examId], references: [id])
+  worker     User         @relation("ExamAttemptTrabajador", fields: [workerId], references: [id])
+  evaluador  User?        @relation("ExamAttemptEvaluador", fields: [evaluadorId], references: [id])
+  respuestas ExamAnswer[]
+
+  @@map("exam_attempts")
+}
+
+model ExamAnswer {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId  String  @map("attempt_id") @db.Uuid
+  questionId String  @map("question_id") @db.Uuid
+
+  // Selección única:
+  opcionId String? @map("opcion_id") @db.Uuid
+  // Abierta:
+  textoRespuesta String? @map("texto_respuesta") @db.Text
+
+  puntajeObtenido      Float?  @map("puntaje_obtenido")
+  observacionEvaluador String? @map("observacion_evaluador") @db.Text
+  // true = ya tiene puntaje definitivo (automático al enviar para
+  // selección única; manual, puesto por el admin, para abiertas).
+  calificada Boolean @default(false)
+
+  attempt  ExamAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question ExamQuestion @relation(fields: [questionId], references: [id])
+  opcion   ExamOption?  @relation(fields: [opcionId], references: [id])
+
+  @@unique([attemptId, questionId])
+  @@map("exam_answers")
 }

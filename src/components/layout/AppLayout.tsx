@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -19,6 +19,7 @@ import {
     Calendar,
     Clock,
     ScrollText,
+    ClipboardCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import AuthGuard from '@/components/AuthGuard';
@@ -33,6 +34,7 @@ const NAV = [
     { to: '/pagos', icon: CreditCard, label: 'Pagos', restricted: true },
     { to: '/inventario', icon: Package, label: 'Inventario' },
     { to: '/horario', icon: Clock, label: 'Control de Horario' },
+    { to: '/evaluaciones', icon: ClipboardCheck, label: 'Evaluaciones' },
 ];
 
 const NAV_ADMIN = [
